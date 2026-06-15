@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView, ScrollView, ImageBackground } from 'react-native';
+import { StyleSheet, Text, View, Image, StatusBar, TouchableOpacity, SafeAreaView, ScrollView, ImageBackground } from 'react-native';
 import { FontAwesome, Ionicons, SimpleLineIcons, Feather } from '@expo/vector-icons';
 
 export default function App() {
@@ -8,6 +8,7 @@ export default function App() {
       <StatusBar barStyle="light-content" backgroundColor="#040712" />
       
       <View style={styles.backgroundOverlay} />
+      <View style={styles.blueGlow} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         
@@ -25,7 +26,7 @@ export default function App() {
                 <View style={styles.cardInternalBottom}>
                   <Text numberOfLines={1} style={styles.cardTitle}>The Notebook</Text>
                   <View style={styles.cardStars}>
-                    {[1, 2, 3, 4, 5].map((s) => <FontAwesome key={s} name="star" size={6} color="#3b82f6" />)}
+                    {[1, 2, 3, 4, 5].map((s) => <FontAwesome key={s} name="star" size={8} color="#3b82f6" />)}
                   </View>
                 </View>
               </ImageBackground>
@@ -42,7 +43,7 @@ export default function App() {
                   <Text numberOfLines={1} style={styles.cardTitle}>Challengers</Text>
                   <View style={styles.centerStarsRow}>
                     <View style={styles.cardStars}>
-                      {[1, 2, 3, 4, 5].map((s) => <FontAwesome key={s} name="star" size={6} color="#3b82f6" />)}
+                      {[1, 2, 3, 4, 5].map((s) => <FontAwesome key={s} name="star" size={8} color="#3b82f6" />)}
                     </View>
                     {/* Linhas de áudio azuis */}
                     <View style={styles.miniAudioWave}>
@@ -67,7 +68,8 @@ export default function App() {
                   <Text numberOfLines={1} style={styles.cardTitle}>Pânico 4</Text>
                   <View style={styles.cardStars}>
                     {[1, 2, 3, 4].map((s) => <FontAwesome key={s} name="star" size={6} color="#3b82f6" />)}
-                    <FontAwesome name="star" size={6} color="rgba(59,130,246,0.15)" />
+                    <FontAwesome name="star" size={8} color="rgba(59,130,246,0.15)"
+/>
                   </View>
                 </View>
               </ImageBackground>
@@ -81,19 +83,12 @@ export default function App() {
           
           {/* LOGOTIPO COMPLETO */}
           <View style={styles.logoContainer}>
-            <View style={styles.logoIconContainer}>
-              <Ionicons name="film-outline" size={28} color="#ffffff" style={styles.filmIconRotation} />
-              <View style={styles.audioWaveOverlay}>
-                <View style={[styles.waveLine, { height: 8 }]} />
-                <View style={[styles.waveLine, { height: 15 }]} />
-                <View style={[styles.waveLine, { height: 10 }]} />
-                <View style={[styles.waveLine, { height: 5 }]} />
-              </View>
-            </View>
-            <Text style={styles.logoText}>
-              CINE<Text style={{ color: '#4491ff' }}>T</Text>RACK
-            </Text>
-          </View>
+  <Image
+    source={require('./assets/logo-cinetrack.jpg')}
+    style={styles.logoImage}
+    resizeMode="contain"
+  />
+</View>
           
           <Text style={styles.logoSubtext}>FILMES · SÉRIES · TRILHAS</Text>
 
@@ -171,15 +166,29 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#040712',
   },
+  blueGlow: {
+  position: 'absolute',
+
+  top: 10,
+  alignSelf: 'center',
+
+  width: 250,
+  height: 250,
+
+  borderRadius: 210,
+
+  backgroundColor: '#2563eb',
+
+  opacity: 0.18,
+},
   scrollContent: {
     paddingBottom: 30,
   },
   heroSection: {
     width: '100%',
-    height: 310,
+    height: 400,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 20,
   },
   floatCards: {
     flexDirection: 'row',
@@ -195,31 +204,56 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.03)',
   },
   fcardSideLeft: {
-    width: 105,
-    height: 170,
-    transform: [{ rotate: '-8deg' }, { translateX: 16 }, { translateY: -6 }],
-    opacity: 0.45,
-  },
+  width: 135,
+  height: 220,
+
+  transform: [
+    { rotate: '-12deg' },
+    { translateX: 35 },
+    { translateY: 15 },
+  ],
+
+  opacity: 0.45,
+},
   fcardSideRight: {
-    width: 105,
-    height: 170,
-    transform: [{ rotate: '8deg' }, { translateX: -16 }, { translateY: -6 }],
-    opacity: 0.45,
-  },
+  width: 135,
+  height: 220,
+
+  transform: [
+    { rotate: '12deg' },
+    { translateX: -35 },
+    { translateY: 15 },
+  ],
+
+  opacity: 0.45,
+},
   fcardCenter: {
-    width: 135,
-    height: 215,
-    zIndex: 10,
-    borderColor: 'rgba(68, 145, 255, 0.15)',
-    borderWidth: 1.2,
+  width: 210,
+  height: 330,
+
+  zIndex: 30,
+
+  borderRadius: 30,
+
+  shadowColor: '#3b82f6',
+  shadowOpacity: 0.6,
+  shadowRadius: 25,
+
+  shadowOffset: {
+    width: 0,
+    height: 0,
   },
-  posterBg: {
-    flex: 1,
-    width: '100%',
-    height: '100%',
-    justifyContent: 'flex-end',
-    position: 'relative',
-  },
+
+  elevation: 15,
+},
+
+posterBg: {
+  flex: 1,
+  width: '100%',
+  height: '100%',
+  justifyContent: 'flex-end',
+  position: 'relative',
+},
   glowOrb: {
     position: 'absolute',
     width: 40,
@@ -228,15 +262,20 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   cardInternalBottom: {
-    padding: 12,
-    width: '100%',
-    backgroundColor: 'rgba(3, 5, 11, 0.85)',
-  },
+  paddingHorizontal: 12,
+  paddingVertical: 14,
+
+  width: '100%',
+
+  backgroundColor: 'rgba(3, 5, 11, 0.92)',
+
+  minHeight: 65,
+},
   cardTitle: {
-    fontSize: 9.5,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 4,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 6,
   },
   centerStarsRow: {
     flexDirection: 'column',
@@ -260,6 +299,7 @@ const styles = StyleSheet.create({
   mainContent: {
     paddingHorizontal: 26,
     alignItems: 'center',
+    marginTop: -20,
   },
   logoContainer: {
     flexDirection: 'row',
@@ -294,11 +334,11 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
   logoText: {
-    fontSize: 27,
-    fontWeight: '900',
-    color: '#ffffff',
-    letterSpacing: 2.5,
-  },
+  fontSize: 34,
+  fontWeight: '900',
+  color: '#fff',
+  letterSpacing: 1.5,
+},
   logoSubtext: {
     fontSize: 9,
     color: '#3a465d',
@@ -306,14 +346,15 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: '600',
   },
+  logoImage: {
+  width: 310,
+  height: 95,
+},
   descriptionText: {
-    fontSize: 14,
-    color: '#606d85',
-    textAlign: 'center',
-    lineHeight: 22,
-    marginTop: 24,
-    maxWidth: '92%',
-  },
+  color: '#8f9bb0',
+  fontSize: 16,
+  lineHeight: 28,
+},
   boldWhiteText: {
     color: '#cbd5e1',
     fontWeight: '600',
