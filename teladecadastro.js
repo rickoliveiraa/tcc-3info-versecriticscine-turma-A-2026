@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView, TextInput, ScrollView, Image, Platform } from 'react-native';
 import { FontAwesome, FontAwesome5, Ionicons, Feather } from '@expo/vector-icons';
 
-export default function TelaCadastro({ onVoltar }) {
+export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -15,17 +15,32 @@ export default function TelaCadastro({ onVoltar }) {
   const obterCoresSenha = () => {
     const tamanho = senha.length;
     if (tamanho === 0) {
-      return { c1: '#1e293b', c2: '#1e293b', c3: '#1e293b' }; // Tudo apagado (cinza)
+      return { c1: '#1e293b', c2: '#1e293b', c3: '#1e293b' }; 
     } else if (tamanho > 0 && tamanho <= 4) {
-      return { c1: '#ef4444', c2: '#1e293b', c3: '#1e293b' }; // Fraca (só vermelho)
+      return { c1: '#ef4444', c2: '#1e293b', c3: '#1e293b' }; 
     } else if (tamanho > 4 && tamanho < 8) {
-      return { c1: '#ef4444', c2: '#f59e0b', c3: '#1e293b' }; // Média (vermelho + amarelo)
+      return { c1: '#ef4444', c2: '#f59e0b', c3: '#1e293b' }; 
     } else {
-      return { c1: '#ef4444', c2: '#f59e0b', c3: '#22c55e' }; // Forte! (vermelho + amarelo + verde)
+      return { c1: '#ef4444', c2: '#f59e0b', c3: '#22c55e' }; 
     }
   };
 
   const cores = obterCoresSenha();
+
+  const handleCadastrar = () => {
+    if (!nome || !email || !senha) {
+      return alert('Por favor, preencha todos os campos obrigatórios.');
+    }
+    if (senha !== confirmarSenha) {
+      return alert('As senhas não coincidem!');
+    }
+    if (!aceitouTermos) {
+      return alert('Você precisa aceitar os Termos de Uso.');
+    }
+    
+    // Sucesso! Avança para a próxima tela configurada no App.js
+    onCadastroSucesso();
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -139,24 +154,30 @@ export default function TelaCadastro({ onVoltar }) {
             </Text>
           </TouchableOpacity>
 
-          {/* BOTÃO CRIAR CONTA */}
+          {/* BOTÃO CRIAR CONTA LINKADO */}
           <TouchableOpacity 
             style={styles.btnCriarConta} 
             activeOpacity={0.85}
-            onPress={() => alert('Conta criada!')}
+            onPress={handleCadastrar}
           >
             <FontAwesome5 name="user-plus" size={14} color="#ffffff" style={{ marginRight: 8 }} />
             <Text style={styles.btnCriarContaText}>Criar conta</Text>
           </TouchableOpacity>
 
-          {/* LINHAS LATERAIS (BARRINHAS) NO CONTINUE COM */}
+          {/* LINK DE RETORNO PARA QUEM JÁ TEM CONTA */}
+          <TouchableOpacity onPress={onVoltar} style={styles.btnRecuperarLink} activeOpacity={0.7}>
+            <Text style={styles.recuperarTextA}>Já tem uma conta? </Text>
+            <Text style={styles.recuperarTextB}>Conecte-se</Text>
+          </TouchableOpacity>
+
+          {/* DIVISOR */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
             <Text style={styles.orText}>ou registre-se com</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* REDES SOCIAIS (RODAPÉ) */}
+          {/* REDES SOCIAIS */}
           <View style={styles.socialRow}>
             <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
               <FontAwesome name="instagram" size={14} color="#cf2b72" style={{ marginRight: 8 }} />
@@ -177,70 +198,35 @@ export default function TelaCadastro({ onVoltar }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#040712' },
-  scrollContent: { 
-    paddingHorizontal: 24, 
-    paddingTop: Platform.OS === 'android' ? 45 : 20, 
-    paddingBottom: 40 
-  },
-  
-  // TOP ROW
+  scrollContent: { paddingHorizontal: 24, paddingTop: Platform.OS === 'android' ? 45 : 20, paddingBottom: 40 },
   topHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
   btnVoltar: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center' },
   logoContainer: { flexDirection: 'row', alignItems: 'center', marginLeft: 12 },
   logoCustomIcon: { width: 18, height: 18, marginRight: 6 },
   logoText: { fontSize: 16, fontWeight: '700', color: '#ffffff', letterSpacing: 0.5 },
   logoBlueText: { color: '#3b82f6' },
-
-  // TÍTULO PRINCIPAL
-  mainTitle: { 
-    fontSize: 32, 
-    fontWeight: 'bold', 
-    color: '#ffffff', 
-    letterSpacing: -0.5, 
-    lineHeight: 38, 
-    marginTop: 5,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium' 
-  },
+  mainTitle: { fontSize: 32, fontWeight: 'bold', color: '#ffffff', letterSpacing: -0.5, lineHeight: 38, marginTop: 5, fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium' },
   subTitleText: { fontSize: 13, color: '#3a465d', marginTop: 12, lineHeight: 18 },
-
-  // FORMULÁRIO E INPUTS
   form: { width: '100%', marginTop: 20 },
   label: { color: '#46526a', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 8, marginTop: 14 },
-  inputContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    width: '100%', 
-    height: 52, 
-    borderRadius: 12, 
-    backgroundColor: '#090d1a', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255, 255, 255, 0.03)',
-    paddingHorizontal: 16
-  },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', width: '100%', height: 52, borderRadius: 12, backgroundColor: '#090d1a', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.03)', paddingHorizontal: 16 },
   inputIcon: { marginRight: 12 },
   input: { flex: 1, color: '#ffffff', fontSize: 13, fontWeight: '500' },
-
-  // BARRA DE FORÇA DA SENHA
   passwordStrengthRow: { flexDirection: 'row', gap: 6, width: '100%', marginTop: 6, marginBottom: 2 },
-  strengthLine: { flex: 1, height: 3, borderRadius: 1.5, transition: '0.3s' },
-
-  // CHECKBOX
+  strengthLine: { flex: 1, height: 3, borderRadius: 1.5 },
   checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 18, paddingRight: 10 },
   checkbox: { width: 18, height: 18, borderRadius: 5, borderWidth: 1, borderColor: '#1e293b', backgroundColor: '#090d1a', justifyContent: 'center', alignItems: 'center', marginTop: 2, marginRight: 10 },
   checkboxChecked: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
   checkboxText: { flex: 1, fontSize: 12, color: '#606d85', lineHeight: 18 },
   linkText: { color: '#3b82f6', fontWeight: '500' },
-
-  // BOTÃO PRINCIPAL
   btnCriarConta: { width: '100%', height: 54, borderRadius: 14, backgroundColor: '#3b82f6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
   btnCriarContaText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-
-  // SEÇÃO DAS BARRINHAS DO DIVISOR (CORRIGIDO)
+  btnRecuperarLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 16, padding: 4 },
+  recuperarTextA: { color: '#46526a', fontSize: 12, fontWeight: '500' },
+  recuperarTextB: { color: '#3b82f6', fontSize: 12, fontWeight: '600' },
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 24 },
   dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.04)' },
   orText: { fontSize: 11, color: '#2e3747', fontWeight: '600', paddingHorizontal: 12 },
-
-  // SOCIAL BUTTONS
   socialRow: { flexDirection: 'row', gap: 12 },
   btnSocial: { flex: 1, height: 48, borderRadius: 12, backgroundColor: '#090d1a', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.02)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   btnSocialText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' }

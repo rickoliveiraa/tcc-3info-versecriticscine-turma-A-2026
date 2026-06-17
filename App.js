@@ -3,12 +3,47 @@ import { StyleSheet, Text, View, Image, StatusBar, TouchableOpacity, SafeAreaVie
 import { FontAwesome, FontAwesome5, Ionicons } from '@expo/vector-icons';
 
 import TelaCadastro from './teladecadastro';
+import RecuperarConta from './recuperarconta'; 
+import EscolhaGeneros from './escolhageneros';
+import Home from './home'; // Importando com 'home' minúsculo conforme seu arquivo
 
 export default function App() {
-  const [telaAtual, setTelaAtual] = useState('Home');
+  const [telaAtual, setTelaAtual] = useState('HomeLanding');
 
+  // Fluxo de telas condicionais
   if (telaAtual === 'Cadastro') {
-    return <TelaCadastro onVoltar={() => setTelaAtual('Home')} />;
+    return (
+      <TelaCadastro 
+        onVoltar={() => setTelaAtual('HomeLanding')}
+        onCadastroSucesso={() => setTelaAtual('Generos')} 
+      />
+    );
+  }
+
+  if (telaAtual === 'Recuperar') {
+    return (
+      <RecuperarConta 
+        onVoltar={() => setTelaAtual('HomeLanding')} 
+      />
+    );
+  }
+
+  if (telaAtual === 'Generos') {
+    return (
+      <EscolhaGeneros 
+        onContinuar={(generosSelecionados) => {
+          setTelaAtual('Home'); 
+        }} 
+        onPular={() => {
+          setTelaAtual('Home');
+        }}
+      />
+    );
+  }
+
+  // Passando o onLogout apontando para 'HomeLanding' para voltar perfeitamente!
+  if (telaAtual === 'Home') {
+    return <Home onLogout={() => setTelaAtual('HomeLanding')} />;
   }
 
   return (
@@ -137,9 +172,19 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.btnLoginContainer} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.btnLoginContainer} activeOpacity={0.8} onPress={() => setTelaAtual('Recuperar')}>
               <Text style={styles.btnLoginText}>
-                Já tenho uma conta — <Text style={{ color: '#ffffff', fontWeight: '500' }}>Entrar</Text>
+                Esqueceu sua senha? — <Text style={{ color: '#ffffff', fontWeight: '500' }}>Recuperar conta</Text>
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.btnLoginContainer, { marginTop: 10, borderColor: 'rgba(59, 130, 246, 0.3)' }]} 
+              activeOpacity={0.8} 
+              onPress={() => setTelaAtual('Home')}
+            >
+              <Text style={[styles.btnLoginText, { color: '#3b82f6' }]}>
+                Acessar Home diretamente (Modo Dev) 🚀
               </Text>
             </TouchableOpacity>
 
