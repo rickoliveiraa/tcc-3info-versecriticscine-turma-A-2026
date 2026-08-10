@@ -1,25 +1,73 @@
-import React from 'react';
-import { StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView, ScrollView, Image, Platform, Dimensions } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  StatusBar,
+  TouchableOpacity,
+  SafeAreaView,
+  ScrollView,
+  Image,
+  Platform,
+  Dimensions,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { getFilmesEmAlta, getSeriesEmAlta } from './services';
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 48 - 24) / 3; // Mantém a proporção perfeita para 3 colunas
+const CARD_WIDTH = (width - 48 - 24) / 3;
 
-// Ajustado de onVoltar para onLogout para conectar perfeitamente com seu App.js e Perfil
 export default function Home({ onLogout }) {
+  const [filmes, setFilmes] = useState([]);
+  const [series, setSeries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function carregarDadosApi() {
+      try {
+        setLoading(true);
+        const [respostaFilmes, respostaSeries] = await Promise.all([
+          getFilmesEmAlta(),
+          getSeriesEmAlta(),
+        ]);
+
+        // Trata para pegar .results se existir, ou o próprio array retornado
+        const listaFilmes = Array.isArray(respostaFilmes) 
+          ? respostaFilmes 
+          : (respostaFilmes?.results || []);
+
+        const listaSeries = Array.isArray(respostaSeries) 
+          ? respostaSeries 
+          : (respostaSeries?.results || []);
+
+        setFilmes(listaFilmes.slice(0, 10));
+        setSeries(listaSeries.slice(0, 10));
+      } catch (error) {
+        console.error('Erro ao carregar dados do TMDB na Home:', error);
+        setFilmes([]);
+        setSeries([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    carregarDadosApi();
+  }, []);
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#040712" />
 
       {/* HEADER PRINCIPAL */}
       <View style={styles.header}>
-        {/* BOTÃO VOLTAR INTEGRADO AQUI */}
         <TouchableOpacity style={styles.iconBadge} onPress={onLogout} activeOpacity={0.7}>
           <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
 
-        <Text style={[styles.logoText, { flex: 1, marginLeft: 12 }]}>Cine<Text style={styles.logoBlueText}>Track</Text></Text>
-        
+        <Text style={[styles.logoText, { flex: 1, marginLeft: 12 }]}>
+          Cine<Text style={styles.logoBlueText}>Track</Text>
+        </Text>
+
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.iconBadge} activeOpacity={0.7}>
             <Feather name="bell" size={18} color="#ffffff" />
@@ -38,7 +86,9 @@ export default function Home({ onLogout }) {
         <View style={styles.continueCard}>
           <View style={styles.continueHeader}>
             <View style={styles.starsRow}>
-              {[1, 2, 3, 4].map((s) => <Ionicons key={s} name="star" size={14} color="#3b82f6" style={{ marginRight: 2 }} />)}
+              {[1, 2, 3, 4].map((s) => (
+                <Ionicons key={s} name="star" size={14} color="#3b82f6" style={{ marginRight: 2 }} />
+              ))}
               <Ionicons name="star" size={14} color="#1e293b" />
             </View>
           </View>
@@ -62,7 +112,6 @@ export default function Home({ onLogout }) {
             </TouchableOpacity>
           </View>
 
-          {/* Barra de Progresso do Filme/Série */}
           <View style={styles.mediaProgressBg}>
             <View style={[styles.mediaProgressFill, { width: '62%' }]} />
           </View>
@@ -91,117 +140,115 @@ export default function Home({ onLogout }) {
           </View>
         </View>
 
-        {/* SEÇÃO: FILMES EM ALTA */}
+        {/* SEÇÃO: FILMES EM ALTA (TMDB API) */}
         <Text style={styles.sectionLabel}>FILMES EM ALTA</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-          {/* Filme 1 */}
-          <View style={styles.showcaseCard}>
-            <View style={[styles.posterPlaceholder, { backgroundColor: '#1e1b4b' }]}>
-              <Text style={styles.rankNumber}>1</Text>
-              <Text style={styles.emojiPoster}>🌌</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.showcaseTitle}>Dune: Part Two</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={10} color="#3b82f6" />
-              <Text style={styles.ratingText}>4.8</Text>
-            </View>
-          </View>
+        {loading ? (
+          <ActivityIndicator size="small" color="#3b82f6" style={{ marginVertical: 20 }} />
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {filmes.map((item, index) => (
+              <TouchableOpacity key={item.id} style={styles.showcaseCard} activeOpacity={0.8}>
+                <View style={styles.posterContainer}>
+                  {item.poster_path ? (
+                    <Image
+                      source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
+                      style={styles.posterImage}
+                    />
+                  ) : (
+                    <View style={[styles.posterPlaceholder, { backgroundColor: '#1e1b4b' }]}>
+                      <Text style={styles.emojiPoster}>🎬</Text>
+                    </View>
+                  )}
+                  <Text style={styles.rankNumber}>{index + 1}</Text>
+                </View>
+                <Text numberOfLines={1} style={styles.showcaseTitle}>
+                  {item.title || item.original_title}
+                </Text>
+                <View style={styles.ratingRow}>
+                  <Ionicons name="star" size={10} color="#3b82f6" />
+                  <Text style={styles.ratingText}>
+                    {item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
-          {/* Filme 2 */}
-          <View style={styles.showcaseCard}>
-            <View style={[styles.posterPlaceholder, { backgroundColor: '#450a0a' }]}>
-              <Text style={styles.rankNumber}>2</Text>
-              <Text style={styles.emojiPoster}>🔺</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.showcaseTitle}>Hereditary</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={10} color="#3b82f6" />
-              <Text style={styles.ratingText}>4.9</Text>
-            </View>
-          </View>
-
-          {/* Filme 3 */}
-          <View style={styles.showcaseCard}>
-            <View style={[styles.posterPlaceholder, { backgroundColor: '#0f172a' }]}>
-              <Text style={styles.rankNumber}>3</Text>
-              <Text style={styles.emojiPoster}>🚀</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.showcaseTitle}>Interstellar</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={10} color="#3b82f6" />
-              <Text style={styles.ratingText}>4.7</Text>
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* SEÇÃO: SÉRIES EM ALTA */}
+        {/* SEÇÃO: SÉRIES EM ALTA (TMDB API) */}
         <Text style={styles.sectionLabel}>SÉRIES EM ALTA</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-          {/* Série 1 */}
-          <View style={styles.showcaseCard}>
-            <View style={[styles.posterPlaceholder, { backgroundColor: '#0f172a' }]}>
-              <Text style={styles.rankNumber}>1</Text>
-              <Text style={styles.emojiPoster}>🏢</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.showcaseTitle}>Severance</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={10} color="#3b82f6" />
-              <Text style={styles.ratingText}>4.9</Text>
-            </View>
-          </View>
-
-          {/* Série 2 */}
-          <View style={styles.showcaseCard}>
-            <View style={[styles.posterPlaceholder, { backgroundColor: '#4c0519' }]}>
-              <Text style={styles.rankNumber}>2</Text>
-              <Text style={styles.emojiPoster}>🌹</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.showcaseTitle}>Euphoria</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={10} color="#3b82f6" />
-              <Text style={styles.ratingText}>4.6</Text>
-            </View>
-          </View>
-
-          {/* Série 3 */}
-          <View style={styles.showcaseCard}>
-            <View style={[styles.posterPlaceholder, { backgroundColor: '#064e3b' }]}>
-              <Text style={styles.rankNumber}>3</Text>
-              <Text style={styles.emojiPoster}>🦑</Text>
-            </View>
-            <Text numberOfLines={1} style={styles.showcaseTitle}>Squid Game</Text>
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={10} color="#3b82f6" />
-              <Text style={styles.ratingText}>4.7</Text>
-            </View>
-          </View>
-        </ScrollView>
+        {loading ? (
+          <ActivityIndicator size="small" color="#3b82f6" style={{ marginVertical: 20 }} />
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {series.map((item, index) => (
+              <TouchableOpacity key={item.id} style={styles.showcaseCard} activeOpacity={0.8}>
+                <View style={styles.posterContainer}>
+                  {item.poster_path ? (
+                    <Image
+                      source={{ uri: `https://image.tmdb.org/t/p/w500${item.poster_path}` }}
+                      style={styles.posterImage}
+                    />
+                  ) : (
+                    <View style={[styles.posterPlaceholder, { backgroundColor: '#0f172a' }]}>
+                      <Text style={styles.emojiPoster}>📺</Text>
+                    </View>
+                  )}
+                  <Text style={styles.rankNumber}>{index + 1}</Text>
+                </View>
+                <Text numberOfLines={1} style={styles.showcaseTitle}>
+                  {item.name || item.original_name}
+                </Text>
+                <View style={styles.ratingRow}>
+                  <Ionicons name="star" size={10} color="#3b82f6" />
+                  <Text style={styles.ratingText}>
+                    {item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
         {/* SEÇÃO: CONEXÕES */}
         <Text style={styles.sectionLabel}>CONEXÕES</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={[styles.horizontalScroll, { marginBottom: 16 }]}>
           <View style={styles.friendContainer}>
-            <View style={[styles.friendAvatar, { backgroundColor: '#3b82f6' }]}><Text style={styles.avatarLabelText}>😎</Text><View style={styles.onlineDot}/></View>
+            <View style={[styles.friendAvatar, { backgroundColor: '#3b82f6' }]}>
+              <Text style={styles.avatarLabelText}>😎</Text>
+              <View style={styles.onlineDot} />
+            </View>
             <Text style={styles.friendName}>Lucas</Text>
           </View>
           <View style={styles.friendContainer}>
-            <View style={[styles.friendAvatar, { backgroundColor: '#f43f5e' }]}><Text style={styles.avatarLabelText}>🎬</Text></View>
+            <View style={[styles.friendAvatar, { backgroundColor: '#f43f5e' }]}>
+              <Text style={styles.avatarLabelText}>🎬</Text>
+            </View>
             <Text style={styles.friendName}>Ana</Text>
           </View>
           <View style={styles.friendContainer}>
-            <View style={[styles.friendAvatar, { backgroundColor: '#a855f7' }]}><Text style={styles.avatarLabelText}>🍿</Text><View style={styles.onlineDot}/></View>
+            <View style={[styles.friendAvatar, { backgroundColor: '#a855f7' }]}>
+              <Text style={styles.avatarLabelText}>🍿</Text>
+              <View style={styles.onlineDot} />
+            </View>
             <Text style={styles.friendName}>Pedro</Text>
           </View>
           <View style={styles.friendContainer}>
-            <View style={[styles.friendAvatar, { backgroundColor: '#eab308' }]}><Text style={styles.avatarLabelText}>👻</Text></View>
+            <View style={[styles.friendAvatar, { backgroundColor: '#eab308' }]}>
+              <Text style={styles.avatarLabelText}>👻</Text>
+            </View>
             <Text style={styles.friendName}>Beatriz</Text>
           </View>
           <View style={styles.friendContainer}>
-            <View style={[styles.friendAvatar, { backgroundColor: '#06b6d4' }]}><Text style={styles.avatarLabelText}>🎭</Text></View>
+            <View style={[styles.friendAvatar, { backgroundColor: '#06b6d4' }]}>
+              <Text style={styles.avatarLabelText}>🎭</Text>
+            </View>
             <Text style={styles.friendName}>Mariana</Text>
           </View>
           <View style={styles.friendContainer}>
-            <View style={[styles.friendAvatar, { backgroundColor: '#1e293b', borderStyle: 'dashed', borderWidth: 1, borderColor: '#46526a' }]}><Feather name="users" size={16} color="#46526a" /></View>
+            <View style={[styles.friendAvatar, { backgroundColor: '#1e293b', borderStyle: 'dashed', borderWidth: 1, borderColor: '#46526a' }]}>
+              <Feather name="users" size={16} color="#46526a" />
+            </View>
             <Text style={styles.friendName}>ver todos</Text>
           </View>
         </ScrollView>
@@ -209,23 +256,31 @@ export default function Home({ onLogout }) {
         {/* REVIEWS DAS CONEXÕES */}
         <View style={styles.feedCard}>
           <View style={styles.feedHeader}>
-            <View style={[styles.feedMiniAvatar, { backgroundColor: '#3b82f6' }]}><Text style={{ fontSize: 10 }}>😎</Text></View>
+            <View style={[styles.feedMiniAvatar, { backgroundColor: '#3b82f6' }]}>
+              <Text style={{ fontSize: 10 }}>😎</Text>
+            </View>
             <Text style={styles.feedHeaderText}>
               <Text style={styles.boldWhite}>Lucas</Text> avaliou <Text style={styles.boldWhite}>Scream VI</Text>
             </Text>
           </View>
           <View style={styles.feedContentRow}>
             <View style={styles.feedStarsRow}>
-              {[1, 2, 3, 4, 5].map((s) => <Ionicons key={s} name="star" size={12} color="#3b82f6" style={{ marginRight: 2 }} />)}
+              {[1, 2, 3, 4, 5].map((s) => (
+                <Ionicons key={s} name="star" size={12} color="#3b82f6" style={{ marginRight: 2 }} />
+              ))}
               <Text style={styles.feedTimeText}>· há 2h</Text>
             </View>
-            <View style={[styles.feedMiniPoster, { backgroundColor: '#450a0a' }]}><Text style={{ fontSize: 12 }}>🔪</Text></View>
+            <View style={[styles.feedMiniPoster, { backgroundColor: '#450a0a' }]}>
+              <Text style={{ fontSize: 12 }}>🔪</Text>
+            </View>
           </View>
         </View>
 
         <View style={styles.feedCard}>
           <View style={styles.feedHeader}>
-            <View style={[styles.feedMiniAvatar, { backgroundColor: '#a855f7' }]}><Text style={{ fontSize: 10 }}>🍿</Text></View>
+            <View style={[styles.feedMiniAvatar, { backgroundColor: '#a855f7' }]}>
+              <Text style={{ fontSize: 10 }}>🍿</Text>
+            </View>
             <Text style={styles.feedHeaderText}>
               <Text style={styles.boldWhite}>Pedro</Text> está assistindo <Text style={styles.boldWhite}>Severance</Text>
             </Text>
@@ -236,7 +291,9 @@ export default function Home({ onLogout }) {
               <Text style={styles.feedTimeText}>· agora</Text>
               <View style={[styles.onlineDot, { position: 'relative', top: 0, right: 0, marginLeft: 6 }]} />
             </View>
-            <View style={[styles.feedMiniPoster, { backgroundColor: '#0f172a' }]}><Text style={{ fontSize: 12 }}>🏢</Text></View>
+            <View style={[styles.feedMiniPoster, { backgroundColor: '#0f172a' }]}>
+              <Text style={{ fontSize: 12 }}>🏢</Text>
+            </View>
           </View>
         </View>
 
@@ -244,21 +301,29 @@ export default function Home({ onLogout }) {
         <Text style={styles.sectionLabel}>ÚLTIMOS REGISTROS</Text>
         <View style={styles.logCard}>
           <View style={styles.logCardMain}>
-            <View style={[styles.logPoster, { backgroundColor: '#1e1b4b' }]}><Text style={{ fontSize: 18 }}>🌌</Text></View>
+            <View style={[styles.logPoster, { backgroundColor: '#1e1b4b' }]}>
+              <Text style={{ fontSize: 18 }}>🌌</Text>
+            </View>
             <View style={styles.logContent}>
               <View style={styles.logTitleRow}>
                 <Text style={styles.logMediaTitle}>Dune: Part Two</Text>
                 <Text style={styles.logDate}>hoje</Text>
               </View>
               <View style={styles.starsRow}>
-                {[1,2,3,4,5].map((s) => <Ionicons key={s} name="star" size={11} color="#3b82f6" style={{ marginRight: 2 }} />)}
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Ionicons key={s} name="star" size={11} color="#3b82f6" style={{ marginRight: 2 }} />
+                ))}
               </View>
               <Text numberOfLines={2} style={styles.logComment}>
                 "Visualmente esmagador. Zimmer transcende mais uma vez."
               </Text>
               <View style={styles.logTagsContainer}>
-                <View style={styles.logTag}><Text style={styles.logTagText}>• Paul Atreides</Text></View>
-                <View style={styles.logTag}><Text style={styles.logTagText}>• Hans Zimmer</Text></View>
+                <View style={styles.logTag}>
+                  <Text style={styles.logTagText}>• Paul Atreides</Text>
+                </View>
+                <View style={styles.logTag}>
+                  <Text style={styles.logTagText}>• Hans Zimmer</Text>
+                </View>
               </View>
             </View>
           </View>
@@ -266,14 +331,18 @@ export default function Home({ onLogout }) {
 
         <View style={[styles.logCard, { marginBottom: 40 }]}>
           <View style={styles.logCardMain}>
-            <View style={[styles.logPoster, { backgroundColor: '#450a0a' }]}><Text style={{ fontSize: 18 }}>🔺</Text></View>
+            <View style={[styles.logPoster, { backgroundColor: '#450a0a' }]}>
+              <Text style={{ fontSize: 18 }}>🔺</Text>
+            </View>
             <View style={styles.logContent}>
               <View style={styles.logTitleRow}>
                 <Text style={styles.logMediaTitle}>Hereditary</Text>
                 <Text style={styles.logDate}>ontem</Text>
               </View>
               <View style={styles.starsRow}>
-                {[1,2,3,4].map((s) => <Ionicons key={s} name="star" size={11} color="#3b82f6" style={{ marginRight: 2 }} />)}
+                {[1, 2, 3, 4].map((s) => (
+                  <Ionicons key={s} name="star" size={11} color="#3b82f6" style={{ marginRight: 2 }} />
+                ))}
                 <Ionicons name="star" size={11} color="#1e293b" />
               </View>
               <Text numberOfLines={2} style={styles.logComment}>
@@ -285,7 +354,7 @@ export default function Home({ onLogout }) {
 
       </ScrollView>
 
-      {/* NAVEGAÇÃO INFERIOR (BOTTOM TAB BAR) */}
+      {/* NAVEGAÇÃO INFERIOR */}
       <View style={styles.bottomTabBar}>
         <TouchableOpacity style={styles.tabItem} activeOpacity={0.7}>
           <Ionicons name="home" size={20} color="#3b82f6" />
@@ -295,8 +364,7 @@ export default function Home({ onLogout }) {
           <Feather name="search" size={20} color="#46526a" />
           <Text style={styles.tabLabel}>Buscar</Text>
         </TouchableOpacity>
-        
-        {/* BOTÃO FLUTUANTE CENTRAL DE ADICIONAR */}
+
         <TouchableOpacity style={styles.centerAddButton} activeOpacity={0.85}>
           <Feather name="plus" size={24} color="#ffffff" />
         </TouchableOpacity>
@@ -305,8 +373,7 @@ export default function Home({ onLogout }) {
           <MaterialCommunityIcons name="notebook-outline" size={20} color="#46526a" />
           <Text style={styles.tabLabel}>Diário</Text>
         </TouchableOpacity>
-        
-        {/* BOTÃO DE VOLTAR 2: Ícone do Perfil conectado ao onLogout */}
+
         <TouchableOpacity style={styles.tabItem} activeOpacity={0.7} onPress={onLogout}>
           <Feather name="user" size={20} color="#46526a" />
           <Text style={styles.tabLabel}>Perfil</Text>
@@ -320,7 +387,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#040712' },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justify: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: Platform.OS === 'android' ? 40 : 15,
@@ -359,10 +426,10 @@ const styles = StyleSheet.create({
   },
   avatarText: { color: '#ffffff', fontWeight: 'bold', fontSize: 14 },
   scrollContent: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 100 },
-  
+
   // SEÇÕES GERAIS
   sectionLabel: { color: '#46526a', fontSize: 10, fontWeight: '700', letterSpacing: 1.5, marginTop: 24, marginBottom: 14 },
-  
+
   // CONTINUAR ASSISTINDO
   continueCard: {
     width: '100%',
@@ -402,19 +469,41 @@ const styles = StyleSheet.create({
   diarioLabel: { color: '#46526a', fontSize: 10, marginTop: 4, fontWeight: '500' },
   diarioIndicator: { position: 'absolute', bottom: 0, left: 12, right: 12, height: 2, borderRadius: 1 },
 
-  // SHOWCASE HORIZONTAL (FILMES E SÉRIES)
+  // SHOWCASE HORIZONTAL (TMDB)
   horizontalScroll: { flexDirection: 'row', gap: 12 },
   showcaseCard: { width: CARD_WIDTH },
-  posterPlaceholder: {
+  posterContainer: {
     width: '100%',
     height: 140,
     borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
+    overflow: 'hidden',
     position: 'relative',
     marginBottom: 8,
+    backgroundColor: '#090d1a',
   },
-  rankNumber: { position: 'absolute', top: 8, left: 10, color: '#ffffff', fontSize: 18, fontWeight: '900', opacity: 0.8 },
+  posterImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 14,
+  },
+  posterPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  rankNumber: {
+    position: 'absolute',
+    top: 6,
+    left: 8,
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    backgroundColor: 'rgba(4, 7, 18, 0.7)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
   emojiPoster: { fontSize: 28 },
   showcaseTitle: { color: '#ffffff', fontSize: 12, fontWeight: '600' },
   ratingRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
