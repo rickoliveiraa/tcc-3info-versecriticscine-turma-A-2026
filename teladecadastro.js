@@ -1,233 +1,291 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView, TextInput, ScrollView, Image, Platform } from 'react-native';
-import { FontAwesome, FontAwesome5, Ionicons, Feather } from '@expo/vector-icons';
+import { 
+  StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView, 
+  TextInput, ScrollView, Platform, Dimensions, KeyboardAvoidingView 
+} from 'react-native';
+import { Ionicons, Feather } from '@expo/vector-icons';
+
+const { width, height } = Dimensions.get('window');
 
 export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [aceitouTermos, setAceitouTermos] = useState(true);
+  const [aceitouTermos, setAceitouTermos] = useState(false);
   const [verSenha, setVerSenha] = useState(false);
   const [verConfirmarSenha, setVerConfirmarSenha] = useState(false);
+  
+  // Estados de foco
+  const [focusNome, setFocusNome] = useState(false);
+  const [focusEmail, setFocusEmail] = useState(false);
+  const [focusSenha, setFocusSenha] = useState(false);
+  const [focusConfirmar, setFocusConfirmar] = useState(false);
 
-  // Lógica dinâmica para as cores da barra de força da senha
-  const obterCoresSenha = () => {
+  // Lógica da barra de força
+  const obterForcaSenha = () => {
     const tamanho = senha.length;
-    if (tamanho === 0) {
-      return { c1: '#1e293b', c2: '#1e293b', c3: '#1e293b' }; 
-    } else if (tamanho > 0 && tamanho <= 4) {
-      return { c1: '#ef4444', c2: '#1e293b', c3: '#1e293b' }; 
-    } else if (tamanho > 4 && tamanho < 8) {
-      return { c1: '#ef4444', c2: '#f59e0b', c3: '#1e293b' }; 
-    } else {
-      return { c1: '#ef4444', c2: '#f59e0b', c3: '#22c55e' }; 
-    }
+    if (tamanho === 0) return { c1: '#1e293b', c2: '#1e293b', c3: '#1e293b', text: '', color: '#1e293b' };
+    if (tamanho > 0 && tamanho < 6) return { c1: '#ef4444', c2: '#1e293b', c3: '#1e293b', text: 'Fraca', color: '#ef4444' };
+    if (tamanho >= 6 && tamanho < 8) return { c1: '#f59e0b', c2: '#f59e0b', c3: '#1e293b', text: 'Média', color: '#f59e0b' };
+    return { c1: '#22c55e', c2: '#22c55e', c3: '#22c55e', text: 'Forte', color: '#22c55e' };
   };
 
-  const cores = obterCoresSenha();
+  const forca = obterForcaSenha();
 
   const handleCadastrar = () => {
-    if (!nome || !email || !senha) {
-      return alert('Por favor, preencha todos os campos obrigatórios.');
-    }
-    if (senha !== confirmarSenha) {
-      return alert('As senhas não coincidem!');
-    }
-    if (!aceitouTermos) {
-      return alert('Você precisa aceitar os Termos de Uso.');
-    }
-    
-    // Sucesso! Avança para a próxima tela configurada no App.js
+    if (!nome || !email || !senha) return alert('Por favor, preencha todos os campos obrigatórios.');
+    if (senha.length < 6) return alert('A senha deve ter pelo menos 6 caracteres.');
+    if (senha !== confirmarSenha) return alert('As senhas não coincidem!');
+    if (!aceitouTermos) return alert('Você precisa aceitar os Termos de Uso para continuar.');
     onCadastroSucesso();
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#040712" />
+      <StatusBar barStyle="light-content" backgroundColor="#020617" translucent={Platform.OS === 'android'} />
       
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* TOP ROW: BOTÃO VOLTAR + LOGO CINETRACK */}
-        <View style={styles.topHeaderRow}>
-          <TouchableOpacity onPress={onVoltar} style={styles.btnVoltar} activeOpacity={0.7}>
-            <Ionicons name="arrow-back" size={20} color="#ffffff" />
-          </TouchableOpacity>
+      {/* Fundo de Cinema */}
+      <View style={styles.cinemaBackground}>
+        <View style={styles.projectorLightLeft} />
+        <View style={styles.projectorLightRight} />
+      </View>
+
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('./assets/logo-cinetrack.png')}
-              style={styles.logoCustomIcon}
-              resizeMode="contain"
-            />
-            <Text style={styles.logoText}>Cine<Text style={styles.logoBlueText}>Track</Text></Text>
-          </View>
-        </View>
-
-        {/* TÍTULO PRINCIPAL */}
-        <Text style={styles.mainTitle}>Criar sua{'\n'}conta gratuita</Text>
-        <Text style={styles.subTitleText}>Preencha os dados abaixo ou entre com uma rede social.</Text>
-
-        {/* FORMULÁRIO */}
-        <View style={styles.form}>
-          
-          {/* CAMPO: NOME */}
-          <Text style={styles.label}>NOME</Text>
-          <View style={styles.inputContainer}>
-            <Feather name="user" size={16} color="#46526a" style={styles.inputIcon} />
-            <TextInput 
-              style={styles.input} 
-              placeholder="Seu nome completo" 
-              placeholderTextColor="#46526a"
-              value={nome}
-              onChangeText={setNome}
-            />
-          </View>
-
-          {/* CAMPO: E-MAIL */}
-          <Text style={styles.label}>E-MAIL</Text>
-          <View style={styles.inputContainer}>
-            <Feather name="mail" size={16} color="#46526a" style={styles.inputIcon} />
-            <TextInput 
-              style={styles.input} 
-              placeholder="seu@email.com" 
-              placeholderTextColor="#46526a"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
-
-          {/* CAMPO: SENHA */}
-          <Text style={styles.label}>SENHA</Text>
-          <View style={styles.inputContainer}>
-            <Feather name="lock" size={16} color="#46526a" style={styles.inputIcon} />
-            <TextInput 
-              style={styles.input} 
-              placeholder="Mínimo 8 caracteres" 
-              placeholderTextColor="#46526a"
-              secureTextEntry={!verSenha}
-              value={senha}
-              onChangeText={setSenha}
-            />
-            <TouchableOpacity onPress={() => setVerSenha(!verSenha)}>
-              <Feather name={verSenha ? "eye" : "eye-off"} size={16} color="#46526a" />
+          {/* TOP ROW */}
+          <View style={styles.topHeaderRow}>
+            <TouchableOpacity onPress={onVoltar} style={styles.btnVoltar} activeOpacity={0.7}>
+              <Ionicons name="arrow-back" size={20} color="#ffffff" />
             </TouchableOpacity>
-          </View>
-
-          {/* BARRA DE FORÇA DA SENHA DINÂMICA */}
-          <View style={styles.passwordStrengthRow}>
-            <View style={[styles.strengthLine, { backgroundColor: cores.c1 }]} />
-            <View style={[styles.strengthLine, { backgroundColor: cores.c2 }]} />
-            <View style={[styles.strengthLine, { backgroundColor: cores.c3 }]} />
-          </View>
-
-          {/* CAMPO: CONFIRMAR SENHA */}
-          <Text style={styles.label}>CONFIRMAR SENHA</Text>
-          <View style={styles.inputContainer}>
-            <Feather name="lock" size={16} color="#46526a" style={styles.inputIcon} />
-            <TextInput 
-              style={styles.input} 
-              placeholder="Repita a senha" 
-              placeholderTextColor="#46526a"
-              secureTextEntry={!verConfirmarSenha}
-              value={confirmarSenha}
-              onChangeText={setConfirmarSenha}
-            />
-            <TouchableOpacity onPress={() => setVerConfirmarSenha(!verConfirmarSenha)}>
-              <Feather name={verConfirmarSenha ? "eye" : "eye-off"} size={16} color="#46526a" />
-            </TouchableOpacity>
-          </View>
-
-          {/* CHECKBOX DE TERMOS */}
-          <TouchableOpacity 
-            style={styles.checkboxRow} 
-            activeOpacity={0.8} 
-            onPress={() => setAceitouTermos(!aceitouTermos)}
-          >
-            <View style={[styles.checkbox, aceitouTermos && styles.checkboxChecked]}>
-              {aceitouTermos && <Ionicons name="checkmark" size={12} color="#ffffff" />}
+            
+            <View style={styles.logoContainer}>
+              <View style={styles.logoIconBoxSmall}>
+                <Feather name="film" size={14} color="#60a5fa" />
+              </View>
+              <Text style={styles.logoText}>Cine<Text style={styles.logoBlueText}>Track</Text></Text>
             </View>
-            <Text style={styles.checkboxText}>
-              Concordo com os <Text style={styles.linkText}>Termos de Uso</Text> e a <Text style={styles.linkText}>Política de Privacidade</Text> do CineTrack.
+          </View>
+
+          {/* 🎬 NOVO LETREIRO CINEMATOGRÁFICO 🎬 */}
+          <View style={styles.titleContainer}>
+            <View style={styles.badgePremium}>
+              <Feather name="star" size={10} color="#fbbf24" style={{ marginRight: 4 }} />
+              <Text style={styles.badgeText}>JUNTE-SE À COMUNIDADE</Text>
+            </View>
+            
+            <Text style={styles.mainTitle}>
+              Crie sua conta{'\n'}
+              <Text style={styles.titleGradient}>gratuita agora</Text>
             </Text>
-          </TouchableOpacity>
-
-          {/* BOTÃO CRIAR CONTA LINKADO */}
-          <TouchableOpacity 
-            style={styles.btnCriarConta} 
-            activeOpacity={0.85}
-            onPress={handleCadastrar}
-          >
-            <FontAwesome5 name="user-plus" size={14} color="#ffffff" style={{ marginRight: 8 }} />
-            <Text style={styles.btnCriarContaText}>Criar conta</Text>
-          </TouchableOpacity>
-
-          {/* LINK DE RETORNO PARA QUEM JÁ TEM CONTA */}
-          <TouchableOpacity onPress={onVoltar} style={styles.btnRecuperarLink} activeOpacity={0.7}>
-            <Text style={styles.recuperarTextA}>Já tem uma conta? </Text>
-            <Text style={styles.recuperarTextB}>Conecte-se</Text>
-          </TouchableOpacity>
-
-          {/* DIVISOR */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.orText}>ou registre-se com</Text>
-            <View style={styles.dividerLine} />
+            
+            <Text style={styles.subTitleText}>
+              Registre filmes, descubra trilhas sonoras e conecte-se com amigos que amam cinema tanto quanto você.
+            </Text>
           </View>
 
-          {/* REDES SOCIAIS */}
-          <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
-              <FontAwesome name="instagram" size={14} color="#cf2b72" style={{ marginRight: 8 }} />
-              <Text style={styles.btnSocialText}>Instagram</Text>
+          {/* FORMULÁRIO */}
+          <View style={styles.form}>
+            
+            {/* NOME */}
+            <Text style={styles.label}>NOME COMPLETO</Text>
+            <View style={[styles.inputContainer, focusNome && styles.inputContainerFocused]}>
+              <Feather name="user" size={16} color={focusNome ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Como devemos te chamar?" 
+                placeholderTextColor="#475569"
+                value={nome}
+                onChangeText={setNome}
+                onFocus={() => setFocusNome(true)}
+                onBlur={() => setFocusNome(false)}
+                selectionColor="#60a5fa" // Corrige o bug do piscar no Android
+              />
+            </View>
+
+            {/* E-MAIL */}
+            <Text style={styles.label}>E-MAIL</Text>
+            <View style={[styles.inputContainer, focusEmail && styles.inputContainerFocused]}>
+              <Feather name="mail" size={16} color={focusEmail ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="seu@email.com" 
+                placeholderTextColor="#475569"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+                onFocus={() => setFocusEmail(true)}
+                onBlur={() => setFocusEmail(false)}
+                selectionColor="#60a5fa" // Corrige o bug do piscar no Android
+              />
+            </View>
+
+            {/* SENHA */}
+            <Text style={styles.label}>SENHA</Text>
+            <View style={[styles.inputContainer, focusSenha && styles.inputContainerFocused]}>
+              <Feather name="lock" size={16} color={focusSenha ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Mínimo de 6 caracteres" 
+                placeholderTextColor="#475569"
+                secureTextEntry={!verSenha}
+                value={senha}
+                onChangeText={setSenha}
+                onFocus={() => setFocusSenha(true)}
+                onBlur={() => setFocusSenha(false)}
+                selectionColor="#60a5fa"
+              />
+              <TouchableOpacity onPress={() => setVerSenha(!verSenha)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                <Feather name={verSenha ? "eye" : "eye-off"} size={16} color="#475569" />
+              </TouchableOpacity>
+            </View>
+
+            {/* BARRA DE FORÇA */}
+            <View style={styles.passwordStrengthContainer}>
+              <View style={styles.passwordStrengthRow}>
+                <View style={[styles.strengthLine, { backgroundColor: forca.c1 }]} />
+                <View style={[styles.strengthLine, { backgroundColor: forca.c2 }]} />
+                <View style={[styles.strengthLine, { backgroundColor: forca.c3 }]} />
+              </View>
+              {forca.text !== '' && (
+                <Text style={[styles.strengthText, { color: forca.color }]}>{forca.text}</Text>
+              )}
+            </View>
+
+            {/* CONFIRMAR SENHA */}
+            <Text style={styles.label}>CONFIRMAR SENHA</Text>
+            <View style={[styles.inputContainer, focusConfirmar && styles.inputContainerFocused]}>
+              <Feather name="lock" size={16} color={focusConfirmar ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
+              <TextInput 
+                style={styles.input} 
+                placeholder="Repita a senha digitada" 
+                placeholderTextColor="#475569"
+                secureTextEntry={!verConfirmarSenha}
+                value={confirmarSenha}
+                onChangeText={setConfirmarSenha}
+                onFocus={() => setFocusConfirmar(true)}
+                onBlur={() => setFocusConfirmar(false)}
+                selectionColor="#60a5fa"
+              />
+              <TouchableOpacity onPress={() => setVerConfirmarSenha(!verConfirmarSenha)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                <Feather name={verConfirmarSenha ? "eye" : "eye-off"} size={16} color="#475569" />
+              </TouchableOpacity>
+            </View>
+
+            {/* CHECKBOX */}
+            <TouchableOpacity style={styles.checkboxRow} activeOpacity={0.8} onPress={() => setAceitouTermos(!aceitouTermos)}>
+              <View style={[styles.checkbox, aceitouTermos && styles.checkboxChecked]}>
+                {aceitouTermos && <Ionicons name="checkmark" size={14} color="#ffffff" />}
+              </View>
+              <Text style={styles.checkboxText}>
+                Concordo com os <Text style={styles.linkText}>Termos de Uso</Text> e a <Text style={styles.linkText}>Política de Privacidade</Text>.
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
-              <Ionicons name="logo-x" size={13} color="#ffffff" style={{ marginRight: 8 }} />
-              <Text style={styles.btnSocialText}>Twitter / X</Text>
+            {/* BOTÃO PRINCIPAL */}
+            <TouchableOpacity style={styles.btnCriarConta} activeOpacity={0.85} onPress={handleCadastrar}>
+              <Text style={styles.btnCriarContaText}>Criar minha conta</Text>
+              <Feather name="arrow-right" size={16} color="#ffffff" style={{ marginLeft: 8 }} />
             </TouchableOpacity>
+
+            {/* LINK RETORNO */}
+            <TouchableOpacity onPress={onVoltar} style={styles.btnRecuperarLink} activeOpacity={0.7}>
+              <Text style={styles.recuperarTextA}>Já tem uma conta? </Text>
+              <Text style={styles.recuperarTextB}>Entrar</Text>
+            </TouchableOpacity>
+
+            {/* DIVISOR */}
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.orText}>ou registre-se com</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            {/* REDES SOCIAIS */}
+            <View style={styles.socialRow}>
+              <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
+                <Ionicons name="logo-instagram" size={18} color="#E1306C" style={{ marginRight: 8 }} />
+                <Text style={styles.btnSocialText}>Instagram</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
+                <Ionicons name="logo-x" size={14} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.btnSocialText}>Twitter / X</Text>
+              </TouchableOpacity>
+            </View>
+
           </View>
-
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#040712' },
-  scrollContent: { paddingHorizontal: 24, paddingTop: Platform.OS === 'android' ? 45 : 20, paddingBottom: 40 },
-  topHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 30 },
-  btnVoltar: { width: 36, height: 36, borderRadius: 10, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.05)', justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#020617' },
+  
+  cinemaBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: '#020617', overflow: 'hidden' },
+  projectorLightLeft: { position: 'absolute', top: -100, left: -100, width: 300, height: 500, backgroundColor: 'rgba(37, 99, 235, 0.25)', transform: [{ rotate: '25deg' }], filter: 'blur(80px)' },
+  projectorLightRight: { position: 'absolute', bottom: -50, right: -100, width: 350, height: 600, backgroundColor: 'rgba(14, 165, 233, 0.15)', transform: [{ rotate: '-15deg' }], filter: 'blur(90px)' },
+
+  scrollContent: { paddingHorizontal: 24, paddingTop: Platform.OS === 'android' ? 40 : 20, paddingBottom: 50 },
+  
+  topHeaderRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+  btnVoltar: { width: 38, height: 38, borderRadius: 12, backgroundColor: 'rgba(255, 255, 255, 0.05)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', justifyContent: 'center', alignItems: 'center' },
   logoContainer: { flexDirection: 'row', alignItems: 'center', marginLeft: 12 },
-  logoCustomIcon: { width: 18, height: 18, marginRight: 6 },
-  logoText: { fontSize: 16, fontWeight: '700', color: '#ffffff', letterSpacing: 0.5 },
-  logoBlueText: { color: '#3b82f6' },
-  mainTitle: { fontSize: 32, fontWeight: 'bold', color: '#ffffff', letterSpacing: -0.5, lineHeight: 38, marginTop: 5, fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-medium' },
-  subTitleText: { fontSize: 13, color: '#3a465d', marginTop: 12, lineHeight: 18 },
-  form: { width: '100%', marginTop: 20 },
-  label: { color: '#46526a', fontSize: 10, fontWeight: '700', letterSpacing: 1, marginBottom: 8, marginTop: 14 },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', width: '100%', height: 52, borderRadius: 12, backgroundColor: '#090d1a', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.03)', paddingHorizontal: 16 },
+  logoIconBoxSmall: { width: 24, height: 24, borderRadius: 6, backgroundColor: 'rgba(59, 130, 246, 0.15)', justifyContent: 'center', alignItems: 'center', marginRight: 8, borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.3)' },
+  logoText: { fontSize: 18, fontWeight: '800', color: '#ffffff', letterSpacing: 1 },
+  logoBlueText: { color: '#60a5fa' },
+  
+  // 🎬 NOVO ESTILO DO TÍTULO 🎬
+  titleContainer: { marginBottom: 30 },
+  badgePremium: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(251, 191, 36, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(251, 191, 36, 0.2)', marginBottom: 16 },
+  badgeText: { color: '#fbbf24', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+  
+  mainTitle: { fontSize: 36, fontWeight: '900', color: '#ffffff', letterSpacing: -1, lineHeight: 42 },
+  titleGradient: { color: '#60a5fa', textShadowColor: 'rgba(59, 130, 246, 0.5)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 },
+  
+  subTitleText: { fontSize: 14, color: '#94a3b8', marginTop: 16, lineHeight: 22, paddingRight: 20 },
+  
+  form: { width: '100%' },
+  label: { color: '#94a3b8', fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 8, marginTop: 18 },
+  
+  // Inputs (Corrigidos para não piscar)
+  inputContainer: { flexDirection: 'row', alignItems: 'center', width: '100%', height: 54, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', paddingHorizontal: 16 },
+  inputContainerFocused: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)' }, // Removi o shadow daqui para evitar o bug de renderização/piscar no Android
   inputIcon: { marginRight: 12 },
-  input: { flex: 1, color: '#ffffff', fontSize: 13, fontWeight: '500' },
-  passwordStrengthRow: { flexDirection: 'row', gap: 6, width: '100%', marginTop: 6, marginBottom: 2 },
-  strengthLine: { flex: 1, height: 3, borderRadius: 1.5 },
-  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 18, paddingRight: 10 },
-  checkbox: { width: 18, height: 18, borderRadius: 5, borderWidth: 1, borderColor: '#1e293b', backgroundColor: '#090d1a', justifyContent: 'center', alignItems: 'center', marginTop: 2, marginRight: 10 },
-  checkboxChecked: { backgroundColor: '#3b82f6', borderColor: '#3b82f6' },
-  checkboxText: { flex: 1, fontSize: 12, color: '#606d85', lineHeight: 18 },
-  linkText: { color: '#3b82f6', fontWeight: '500' },
-  btnCriarConta: { width: '100%', height: 54, borderRadius: 14, backgroundColor: '#3b82f6', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 24 },
-  btnCriarContaText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-  btnRecuperarLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 16, padding: 4 },
-  recuperarTextA: { color: '#46526a', fontSize: 12, fontWeight: '500' },
-  recuperarTextB: { color: '#3b82f6', fontSize: 12, fontWeight: '600' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 24 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.04)' },
-  orText: { fontSize: 11, color: '#2e3747', fontWeight: '600', paddingHorizontal: 12 },
+  input: { flex: 1, color: '#ffffff', fontSize: 14, fontWeight: '500', paddingVertical: 0 }, // paddingVertical 0 ajuda a estabilizar o input no Android
+  
+  passwordStrengthContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 4 },
+  passwordStrengthRow: { flexDirection: 'row', gap: 6, flex: 1, marginRight: 10 },
+  strengthLine: { flex: 1, height: 4, borderRadius: 2 },
+  strengthText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  
+  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 24, paddingRight: 10 },
+  checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: '#334155', backgroundColor: 'rgba(255,255,255,0.02)', justifyContent: 'center', alignItems: 'center', marginTop: 1, marginRight: 12 },
+  checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
+  checkboxText: { flex: 1, fontSize: 12.5, color: '#94a3b8', lineHeight: 19 },
+  linkText: { color: '#60a5fa', fontWeight: '600' },
+  
+  btnCriarConta: { 
+    width: '100%', height: 56, borderRadius: 16, 
+    background: 'linear-gradient(to right, #1d4ed8, #3b82f6)', backgroundColor: '#2563eb',
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 28,
+    shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8
+  },
+  btnCriarContaText: { color: '#ffffff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
+  
+  btnRecuperarLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20, padding: 4 },
+  recuperarTextA: { color: '#64748b', fontSize: 13, fontWeight: '500' },
+  recuperarTextB: { color: '#60a5fa', fontSize: 13, fontWeight: '700' },
+  
+  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 28 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.08)' },
+  orText: { fontSize: 11, color: '#475569', fontWeight: '600', paddingHorizontal: 12 },
+  
   socialRow: { flexDirection: 'row', gap: 12 },
-  btnSocial: { flex: 1, height: 48, borderRadius: 12, backgroundColor: '#090d1a', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.02)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  btnSocialText: { color: '#cbd5e1', fontSize: 12, fontWeight: '600' }
+  btnSocial: { flex: 1, height: 52, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.04)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.1)', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  btnSocialText: { color: '#f8fafc', fontSize: 13, fontWeight: '700' }
 });
