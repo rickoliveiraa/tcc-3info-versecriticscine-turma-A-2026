@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView, 
-  TextInput, ScrollView, Platform, Dimensions, KeyboardAvoidingView 
+  TextInput, ScrollView, Platform, Dimensions, KeyboardAvoidingView, Alert 
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 
@@ -33,12 +33,38 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
 
   const forca = obterForcaSenha();
 
-  const handleCadastrar = () => {
+  const handleCadastrar = async () => {
     if (!nome || !email || !senha) return alert('Por favor, preencha todos os campos obrigatórios.');
     if (senha.length < 6) return alert('A senha deve ter pelo menos 6 caracteres.');
     if (senha !== confirmarSenha) return alert('As senhas não coincidem!');
     if (!aceitouTermos) return alert('Você precisa aceitar os Termos de Uso para continuar.');
-    onCadastroSucesso();
+
+    try {
+      // ATENÇÃO: Substitua o IP abaixo pelo endereço IPv4 da sua máquina local (ex: 192.168.1.15)
+      const response = await fetch('http://192.168.101.29/SWIiRick/TCC/criarconta.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          nome: nome,
+          email: email,
+          senha: senha
+        }).toString()
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.sucesso) {
+        alert('Conta criada com sucesso!');
+        onCadastroSucesso();
+      } else {
+        alert(data.mensagem || 'Erro ao cadastrar no banco de dados.');
+      }
+    } catch (error) {
+      console.error('Erro na requisição:', error);
+      alert('Não foi possível conectar ao servidor PHP. Verifique a conexão e o IP inserido.');
+    }
   };
 
   return (
@@ -68,7 +94,7 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
             </View>
           </View>
 
-          {/* 🎬 NOVO LETREIRO CINEMATOGRÁFICO 🎬 */}
+          {/* LETREIRO CINEMATOGRÁFICO */}
           <View style={styles.titleContainer}>
             <View style={styles.badgePremium}>
               <Feather name="star" size={10} color="#fbbf24" style={{ marginRight: 4 }} />
@@ -100,7 +126,7 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
                 onChangeText={setNome}
                 onFocus={() => setFocusNome(true)}
                 onBlur={() => setFocusNome(false)}
-                selectionColor="#60a5fa" // Corrige o bug do piscar no Android
+                selectionColor="#60a5fa"
               />
             </View>
 
@@ -118,7 +144,7 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
                 onChangeText={setEmail}
                 onFocus={() => setFocusEmail(true)}
                 onBlur={() => setFocusEmail(false)}
-                selectionColor="#60a5fa" // Corrige o bug do piscar no Android
+                selectionColor="#60a5fa"
               />
             </View>
 
@@ -239,7 +265,6 @@ const styles = StyleSheet.create({
   logoText: { fontSize: 18, fontWeight: '800', color: '#ffffff', letterSpacing: 1 },
   logoBlueText: { color: '#60a5fa' },
   
-  // 🎬 NOVO ESTILO DO TÍTULO 🎬
   titleContainer: { marginBottom: 30 },
   badgePremium: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(251, 191, 36, 0.1)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(251, 191, 36, 0.2)', marginBottom: 16 },
   badgeText: { color: '#fbbf24', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
@@ -252,11 +277,10 @@ const styles = StyleSheet.create({
   form: { width: '100%' },
   label: { color: '#94a3b8', fontSize: 11, fontWeight: '700', letterSpacing: 1.2, marginBottom: 8, marginTop: 18 },
   
-  // Inputs (Corrigidos para não piscar)
   inputContainer: { flexDirection: 'row', alignItems: 'center', width: '100%', height: 54, borderRadius: 14, backgroundColor: 'rgba(255, 255, 255, 0.03)', borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.08)', paddingHorizontal: 16 },
-  inputContainerFocused: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)' }, // Removi o shadow daqui para evitar o bug de renderização/piscar no Android
+  inputContainerFocused: { borderColor: '#3b82f6', backgroundColor: 'rgba(59, 130, 246, 0.08)' },
   inputIcon: { marginRight: 12 },
-  input: { flex: 1, color: '#ffffff', fontSize: 14, fontWeight: '500', paddingVertical: 0 }, // paddingVertical 0 ajuda a estabilizar o input no Android
+  input: { flex: 1, color: '#ffffff', fontSize: 14, fontWeight: '500', paddingVertical: 0 },
   
   passwordStrengthContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 4 },
   passwordStrengthRow: { flexDirection: 'row', gap: 6, flex: 1, marginRight: 10 },
@@ -271,7 +295,7 @@ const styles = StyleSheet.create({
   
   btnCriarConta: { 
     width: '100%', height: 56, borderRadius: 16, 
-    background: 'linear-gradient(to right, #1d4ed8, #3b82f6)', backgroundColor: '#2563eb',
+    backgroundColor: '#2563eb',
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 28,
     shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8
   },
