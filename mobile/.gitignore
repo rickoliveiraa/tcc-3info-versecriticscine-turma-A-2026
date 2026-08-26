@@ -1,0 +1,51 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# --- DEPENDÊNCIAS ---
+node_modules/
+.pnp
+.pnp.js
+
+# --- EXPO & BUILDS ---
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+*.apk
+*.aab
+*.ipa
+
+# --- ARQUIVOS COM CHAVES DE API E SEGREDO (SEGURANÇA) ---
+.env
+.env.*
+!.env.example
+services.js
+config.js
+
+# --- NATIVE (ANDROID & IOS) ---
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.keystore
+/ios
+/android
+
+# --- METRO & LOGS ---
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.log
+
+# --- SISTEMA OPERACIONAL & EDITORES ---
+.DS_Store
+Thumbs.db
+*.pem
+.vscode/
+.idea/
+
+# --- TYPESCRIPT ---
+*.tsbuildinfo
