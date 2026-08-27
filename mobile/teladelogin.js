@@ -5,64 +5,33 @@ import {
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
 
-// ⚙️ CONFIGURAÇÃO DA API - ALTERE O IP CONFORME SUA REDE LOCAL
-// Exemplo: 'http://192.168.1.40/tcc-3info/web-backend'
-const API_BASE_URL = 'http://192.168.1.40/tcc-3info-versecriticscine-turma-A-2026/web-backend'; 
+// ⚙️ CONFIGURAÇÃO DA API
+const API_BASE_URL = 'http://192.168.1.40/tcc-3info/web-backend';
 
-export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
-  const [nome, setNome] = useState('');
+export default function TelaLogin({ onVoltar, onLoginSucesso }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
-  const [confirmarSenha, setConfirmarSenha] = useState('');
-  const [aceitouTermos, setAceitouTermos] = useState(false);
   const [verSenha, setVerSenha] = useState(false);
-  const [verConfirmarSenha, setVerConfirmarSenha] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Estados de foco para UX premium (borda azul ao digitar)
-  const [focusNome, setFocusNome] = useState(false);
   const [focusEmail, setFocusEmail] = useState(false);
   const [focusSenha, setFocusSenha] = useState(false);
-  const [focusConfirmar, setFocusConfirmar] = useState(false);
 
-  // Lógica da barra de força da senha
-  const obterForcaSenha = () => {
-    const tamanho = senha.length;
-    if (tamanho === 0) return { c1: '#1e293b', c2: '#1e293b', c3: '#1e293b', text: '', color: '#1e293b' };
-    if (tamanho > 0 && tamanho < 6) return { c1: '#ef4444', c2: '#1e293b', c3: '#1e293b', text: 'Fraca', color: '#ef4444' };
-    if (tamanho >= 6 && tamanho < 8) return { c1: '#f59e0b', c2: '#f59e0b', c3: '#1e293b', text: 'Média', color: '#f59e0b' };
-    return { c1: '#22c55e', c2: '#22c55e', c3: '#22c55e', text: 'Forte', color: '#22c55e' };
-  };
-
-  const forca = obterForcaSenha();
-
-  const handleCadastrar = async () => {
-    // 1. Validações locais
-    if (!nome || !email || !senha) {
-      return Alert.alert('Campos obrigatórios', 'Por favor, preencha todos os campos.');
-    }
-    if (senha.length < 6) {
-      return Alert.alert('Senha muito curta', 'A senha deve ter pelo menos 6 caracteres.');
-    }
-    if (senha !== confirmarSenha) {
-      return Alert.alert('Senhas diferentes', 'As senhas não coincidem!');
-    }
-    if (!aceitouTermos) {
-      return Alert.alert('Termos de Uso', 'Você precisa aceitar os Termos de Uso para continuar.');
+  const handleLogin = async () => {
+    if (!email || !senha) {
+      return Alert.alert('Campos obrigatórios', 'Preencha email e senha.');
     }
 
     setLoading(true);
 
     try {
-      // 2. Chamada à API PHP
-      const response = await fetch(`${API_BASE_URL}/criarconta.php`, {
+      const response = await fetch(`${API_BASE_URL}/login.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         body: JSON.stringify({
-          nome: nome.trim(),
           email: email.trim().toLowerCase(),
           senha: senha,
         }),
@@ -70,22 +39,21 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
 
       const data = await response.json();
 
-      // 3. Tratamento da resposta
       if (response.ok && data.sucesso) {
         Alert.alert(
-          'Conta criada! 🎉',
-          data.mensagem || 'Seu cadastro foi realizado com sucesso.',
-          [{ text: 'Continuar', onPress: onCadastroSucesso }]
+          'Bem-vindo! 🎉',
+          `Olá, ${data.usuario.nome}!`,
+          [{ text: 'Continuar', onPress: onLoginSucesso }]
         );
       } else {
-        Alert.alert('Erro no cadastro', data.mensagem || 'Não foi possível criar sua conta. Tente novamente.');
+        Alert.alert('Erro no login', data.mensagem || 'Email ou senha incorretos.');
       }
 
     } catch (error) {
       console.error('Erro na requisição:', error);
       Alert.alert(
         'Erro de conexão', 
-        'Não foi possível conectar ao servidor. Verifique se o backend está rodando e se o IP está correto.'
+        'Não foi possível conectar ao servidor.'
       );
     } finally {
       setLoading(false);
@@ -96,7 +64,6 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#020617" translucent={Platform.OS === 'android'} />
       
-      {/* Fundo de Cinema */}
       <View style={styles.cinemaBackground}>
         <View style={styles.projectorLightLeft} />
         <View style={styles.projectorLightRight} />
@@ -105,7 +72,6 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           
-          {/* TOP ROW */}
           <View style={styles.topHeaderRow}>
             <TouchableOpacity onPress={onVoltar} style={styles.btnVoltar} activeOpacity={0.7}>
               <Ionicons name="arrow-back" size={20} color="#ffffff" />
@@ -119,41 +85,22 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
             </View>
           </View>
 
-          {/* TÍTULO */}
           <View style={styles.titleContainer}>
             <View style={styles.badgePremium}>
-              <Feather name="star" size={10} color="#fbbf24" style={{ marginRight: 4 }} />
-              <Text style={styles.badgeText}>JUNTE-SE À COMUNIDADE</Text>
+              <Feather name="log-in" size={10} color="#fbbf24" style={{ marginRight: 4 }} />
+              <Text style={styles.badgeText}>ACESSE SUA CONTA</Text>
             </View>
             <Text style={styles.mainTitle}>
-              Crie sua conta{'\n'}
-              <Text style={styles.titleGradient}>gratuita agora</Text>
+              Bem-vindo de volta{'\n'}
+              <Text style={styles.titleGradient}>faça seu login</Text>
             </Text>
             <Text style={styles.subTitleText}>
-              Registre filmes, descubra trilhas sonoras e conecte-se com amigos que amam cinema tanto quanto você.
+              Entre com suas credenciais para continuar assistindo e registrando seus filmes e séries favoritos.
             </Text>
           </View>
 
-          {/* FORMULÁRIO */}
           <View style={styles.form}>
             
-            {/* NOME */}
-            <Text style={styles.label}>NOME COMPLETO</Text>
-            <View style={[styles.inputContainer, focusNome && styles.inputContainerFocused]}>
-              <Feather name="user" size={16} color={focusNome ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Como devemos te chamar?" 
-                placeholderTextColor="#475569"
-                value={nome}
-                onChangeText={setNome}
-                onFocus={() => setFocusNome(true)}
-                onBlur={() => setFocusNome(false)}
-                selectionColor="#60a5fa"
-              />
-            </View>
-
-            {/* E-MAIL */}
             <Text style={styles.label}>E-MAIL</Text>
             <View style={[styles.inputContainer, focusEmail && styles.inputContainerFocused]}>
               <Feather name="mail" size={16} color={focusEmail ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
@@ -171,13 +118,12 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
               />
             </View>
 
-            {/* SENHA */}
             <Text style={styles.label}>SENHA</Text>
             <View style={[styles.inputContainer, focusSenha && styles.inputContainerFocused]}>
               <Feather name="lock" size={16} color={focusSenha ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
               <TextInput 
                 style={styles.input} 
-                placeholder="Mínimo de 6 caracteres" 
+                placeholder="Sua senha" 
                 placeholderTextColor="#475569"
                 secureTextEntry={!verSenha}
                 value={senha}
@@ -191,79 +137,37 @@ export default function TelaCadastro({ onVoltar, onCadastroSucesso }) {
               </TouchableOpacity>
             </View>
 
-            {/* BARRA DE FORÇA */}
-            <View style={styles.passwordStrengthContainer}>
-              <View style={styles.passwordStrengthRow}>
-                <View style={[styles.strengthLine, { backgroundColor: forca.c1 }]} />
-                <View style={[styles.strengthLine, { backgroundColor: forca.c2 }]} />
-                <View style={[styles.strengthLine, { backgroundColor: forca.c3 }]} />
-              </View>
-              {forca.text !== '' && (
-                <Text style={[styles.strengthText, { color: forca.color }]}>{forca.text}</Text>
-              )}
-            </View>
-
-            {/* CONFIRMAR SENHA */}
-            <Text style={styles.label}>CONFIRMAR SENHA</Text>
-            <View style={[styles.inputContainer, focusConfirmar && styles.inputContainerFocused]}>
-              <Feather name="lock" size={16} color={focusConfirmar ? "#60a5fa" : "#475569"} style={styles.inputIcon} />
-              <TextInput 
-                style={styles.input} 
-                placeholder="Repita a senha digitada" 
-                placeholderTextColor="#475569"
-                secureTextEntry={!verConfirmarSenha}
-                value={confirmarSenha}
-                onChangeText={setConfirmarSenha}
-                onFocus={() => setFocusConfirmar(true)}
-                onBlur={() => setFocusConfirmar(false)}
-                selectionColor="#60a5fa"
-              />
-              <TouchableOpacity onPress={() => setVerConfirmarSenha(!verConfirmarSenha)} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                <Feather name={verConfirmarSenha ? "eye" : "eye-off"} size={16} color="#475569" />
-              </TouchableOpacity>
-            </View>
-
-            {/* CHECKBOX */}
-            <TouchableOpacity style={styles.checkboxRow} activeOpacity={0.8} onPress={() => setAceitouTermos(!aceitouTermos)}>
-              <View style={[styles.checkbox, aceitouTermos && styles.checkboxChecked]}>
-                {aceitouTermos && <Ionicons name="checkmark" size={14} color="#ffffff" />}
-              </View>
-              <Text style={styles.checkboxText}>
-                Concordo com os <Text style={styles.linkText}>Termos de Uso</Text> e a <Text style={styles.linkText}>Política de Privacidade</Text>.
-              </Text>
+            <TouchableOpacity style={styles.forgotPassword} activeOpacity={0.7}>
+              <Text style={styles.forgotPasswordText}>Esqueceu sua senha?</Text>
             </TouchableOpacity>
 
-            {/* BOTÃO CRIAR CONTA */}
             <TouchableOpacity 
-              style={[styles.btnCriarConta, loading && styles.btnDisabled]} 
+              style={[styles.btnLogin, loading && styles.btnDisabled]} 
               activeOpacity={0.85} 
-              onPress={handleCadastrar}
+              onPress={handleLogin}
               disabled={loading}
             >
               {loading ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <>
-                  <Text style={styles.btnCriarContaText}>Criar minha conta</Text>
-                  <Feather name="arrow-right" size={16} color="#ffffff" style={{ marginLeft: 8 }} />
+                  <Text style={styles.btnLoginText}>Entrar</Text>
+                  <Ionicons name="log-in" size={18} color="#ffffff" style={{ marginLeft: 8 }} />
                 </>
               )}
             </TouchableOpacity>
 
-            {/* LINK RETORNO */}
-            <TouchableOpacity onPress={onVoltar} style={styles.btnRecuperarLink} activeOpacity={0.7}>
-              <Text style={styles.recuperarTextA}>Já tem uma conta? </Text>
-              <Text style={styles.recuperarTextB}>Entrar</Text>
+            <TouchableOpacity onPress={onVoltar} style={styles.btnCadastroLink} activeOpacity={0.7}>
+              <Text style={styles.cadastroTextA}>Ainda não tem conta? </Text>
+              <Text style={styles.cadastroTextB}>Criar conta</Text>
             </TouchableOpacity>
 
-            {/* DIVISOR */}
             <View style={styles.dividerRow}>
               <View style={styles.dividerLine} />
-              <Text style={styles.orText}>ou registre-se com</Text>
+              <Text style={styles.orText}>ou continue com</Text>
               <View style={styles.dividerLine} />
             </View>
 
-            {/* REDES SOCIAIS */}
             <View style={styles.socialRow}>
               <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
                 <Ionicons name="logo-instagram" size={18} color="#E1306C" style={{ marginRight: 8 }} />
@@ -314,29 +218,21 @@ const styles = StyleSheet.create({
   inputIcon: { marginRight: 12 },
   input: { flex: 1, color: '#ffffff', fontSize: 14, fontWeight: '500', paddingVertical: 0 },
   
-  passwordStrengthContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, marginBottom: 4 },
-  passwordStrengthRow: { flexDirection: 'row', gap: 6, flex: 1, marginRight: 10 },
-  strengthLine: { flex: 1, height: 4, borderRadius: 2 },
-  strengthText: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  forgotPassword: { alignSelf: 'flex-end', marginTop: 12, marginBottom: 24 },
+  forgotPasswordText: { color: '#60a5fa', fontSize: 12, fontWeight: '600' },
   
-  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 24, paddingRight: 10 },
-  checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: '#334155', backgroundColor: 'rgba(255,255,255,0.02)', justifyContent: 'center', alignItems: 'center', marginTop: 1, marginRight: 12 },
-  checkboxChecked: { backgroundColor: '#2563eb', borderColor: '#2563eb' },
-  checkboxText: { flex: 1, fontSize: 12.5, color: '#94a3b8', lineHeight: 19 },
-  linkText: { color: '#60a5fa', fontWeight: '600' },
-  
-  btnCriarConta: { 
+  btnLogin: { 
     width: '100%', height: 56, borderRadius: 16, 
     background: 'linear-gradient(to right, #1d4ed8, #3b82f6)', backgroundColor: '#2563eb',
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 28,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginTop: 10,
     shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8
   },
   btnDisabled: { opacity: 0.6 },
-  btnCriarContaText: { color: '#ffffff', fontSize: 15, fontWeight: '800', letterSpacing: 0.5 },
+  btnLoginText: { color: '#ffffff', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
   
-  btnRecuperarLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20, padding: 4 },
-  recuperarTextA: { color: '#64748b', fontSize: 13, fontWeight: '500' },
-  recuperarTextB: { color: '#60a5fa', fontSize: 13, fontWeight: '700' },
+  btnCadastroLink: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 20, padding: 4 },
+  cadastroTextA: { color: '#64748b', fontSize: 13, fontWeight: '500' },
+  cadastroTextB: { color: '#60a5fa', fontSize: 13, fontWeight: '700' },
   
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 28 },
   dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.08)' },

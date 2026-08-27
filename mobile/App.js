@@ -1,3 +1,4 @@
+import TelaLogin from './teladelogin'; // ✅ ADICIONADO: Import da tela de login
 import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, Text, View, Image, StatusBar, TouchableOpacity, 
@@ -50,8 +51,9 @@ export default function App() {
     }
   }, [telaAtual]);
 
-  // --- FLUXO DE NAVEGAÇÃO ---
+  // --- FLUXO DE NAVEGAÇÃO ATUALIZADO ---
   if (telaAtual === 'Cadastro') return <TelaCadastro onVoltar={() => setTelaAtual('HomeLanding')} onCadastroSucesso={() => setTelaAtual('Generos')} />;
+  if (telaAtual === 'Login') return <TelaLogin onVoltar={() => setTelaAtual('HomeLanding')} onLoginSucesso={() => setTelaAtual('Home')} />; // ✅ ADICIONADO: Rota do Login
   if (telaAtual === 'Recuperar') return <RecuperarConta onVoltar={() => setTelaAtual('HomeLanding')} />;
   if (telaAtual === 'Generos') return <EscolhaGeneros onContinuar={() => setTelaAtual('Home')} onPular={() => setTelaAtual('Home')} />;
   if (telaAtual === 'Home') return <Home onLogout={() => setTelaAtual('HomeLanding')} />;
@@ -195,7 +197,6 @@ export default function App() {
             {/* BOTÕES SOCIAIS: INSTAGRAM (IONICONS MODERNO) E X */}
             <View style={styles.socialButtonsRow}>
               <TouchableOpacity style={styles.btnSocial} activeOpacity={0.8}>
-                {/* Ícone do Instagram com cor rosa oficial */}
                 <Ionicons name="logo-instagram" size={22} color="#E1306C" style={{ marginRight: 8 }} />
                 <Text style={styles.btnSocialText}>Instagram</Text>
               </TouchableOpacity>
@@ -206,7 +207,8 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.btnLoginContainer} activeOpacity={0.8} onPress={() => setTelaAtual('Home')}>
+            {/* ✅ ALTERADO: Agora direciona para a tela de Login em vez de ir direto para Home */}
+            <TouchableOpacity style={styles.btnLoginContainer} activeOpacity={0.8} onPress={() => setTelaAtual('Login')}>
               <Text style={styles.btnLoginText}>
                 Já tem uma conta? <Text style={{ color: '#ffffff', fontWeight: '700' }}>Entrar</Text>
               </Text>
