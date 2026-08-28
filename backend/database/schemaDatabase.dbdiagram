@@ -11,34 +11,28 @@
       "y": 50
     },
     {
-      "name": "students",
+      "name": "follows",
       "schemaName": "public",
-      "x": 456.8738376049307,
-      "y": -109.75908787623241
+      "x": 450,
+      "y": -100
     },
     {
-      "name": "teachers",
+      "name": "medias",
       "schemaName": "public",
-      "x": 474.1397463427578,
-      "y": 287.9545728396483
+      "x": 470,
+      "y": 280
     },
     {
-      "name": "courses",
+      "name": "watchlists",
       "schemaName": "public",
-      "x": 1299.0710085956168,
-      "y": 428.6149285260751
+      "x": 900,
+      "y": 150
     },
     {
-      "name": "subjects",
+      "name": "ratings",
       "schemaName": "public",
-      "x": 864.0187696939361,
-      "y": 159.37102014900034
-    },
-    {
-      "name": "grades",
-      "schemaName": "public",
-      "x": 1507.1917703560084,
-      "y": -73.09681611920026
+      "x": 1300,
+      "y": 420
     }
   ],
   "tableGroupCollapseStates": [],
