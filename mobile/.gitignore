@@ -49,3 +49,7 @@ Thumbs.db
 
 # --- TYPESCRIPT ---
 *.tsbuildinfo
+
+# --- BANCO DE DADOS (NÃO VERSIONAR DADOS REAIS) ---
+web-backend/banco.db
+web-backend/*.db
