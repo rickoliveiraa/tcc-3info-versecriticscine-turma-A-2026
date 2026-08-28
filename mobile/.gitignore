@@ -18,8 +18,8 @@ expo-env.d.ts
 .env
 .env.*
 !.env.example
-services.js
-config.js
+# services.js        ← COMENTADO
+# config.js          ← COMENTADO
 
 # --- NATIVE (ANDROID & IOS) ---
 .kotlin/
