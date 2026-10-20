@@ -1,68 +1,53 @@
-
-Project CadastroAlunos {
-  database_type: 'SQLite'
-  Note: 'Sistema para controle de alunos e professores.'
-}
-
-Enum access_level_enum {
-  ADMIN
-  USER
-}
-
 Table users {
-  id integer [pk, increment]
-  name text [not null]
-  email text [not null, unique]
-  email_code text
-  email_verified integer [default: 0]
-  password text [not null, default: 'Ab1234cd@']
-  cellphone text [note: '(99)99999-9999']
-  access_nivel access_level_enum [not null, default: 'USER']
-  created_at datetime [default: `CURRENT_TIMESTAMP`]
-  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+  id int [pk, increment]
+  username varchar [not null]
+  email varchar [not null, unique]
+  password_hash varchar
+  avatar_url text
+  role varchar [default: 'user']
+  created_at timestamp
 }
 
-Table students {
-  id integer [pk, increment]
-  user_id integer [not null, unique, ref: > users.id]
-  rm_number text [not null, unique]
-  course text [not null]
-  created_at datetime [default: `CURRENT_TIMESTAMP`]
-  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+Table follows {
+  id int [pk, increment]
+  follower_user_id int [not null]
+  followed_user_id int [not null]
 }
 
-Table teachers {
-  id integer [pk, increment]
-  user_id integer [not null, unique, ref: > users.id]
-  registration_number text [not null, unique]
-  department text [not null]
-  created_at datetime [default: `CURRENT_TIMESTAMP`]
-  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+Table medias {
+  id int [pk, increment]
+  title varchar [not null]
+  description text
+  type varchar [not null]
+  genres text
+  soundtracks text
+  release_year int
+  age_rating varchar
+  duration_minutes int
+  trailer_url text
+  cover_image_url text
+  rating_average real
 }
 
-Table courses {
-  id integer [pk, increment]
-  name text [not null]
-  code text [not null, unique]
-  created_at datetime [default: `CURRENT_TIMESTAMP`]
-  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+Table watchlists {
+  id int [pk, increment]
+  user_id int [not null]
+  media_id int [not null]
+  status varchar [not null]
 }
 
-Table subjects {
-  id integer [pk, increment]
-  name text [not null]
-  code text [not null, unique]
-  course_id integer [not null, ref: > courses.id]
-  teacher_id integer [not null, ref: > teachers.id]
-  created_at datetime [default: `CURRENT_TIMESTAMP`]
-  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+Table ratings {
+  id int [pk, increment]
+  media_id int [not null]
+  user_id int [not null]
+  stars int [not null]
+  comment text
+  created_at timestamp
 }
 
-Table grades {
-  id integer [pk, increment]
-  student_id integer [not null, ref: > students.id]
-  subject_id integer [not null, ref: > subjects.id]
-  grade integer [not null, note: 'Valor entre 0 e 100']
-  created_at datetime [default: `CURRENT_TIMESTAMP`]
-  updated_at datetime [default: `CURRENT_TIMESTAMP`]
-}
+Ref: follows.follower_user_id > users.id
+Ref: follows.followed_user_id > users.id
+Ref: watchlists.user_id > users.id
+Ref: watchlists.media_id > medias.id
+Ref: ratings.user_id > users.id
+Ref: ratings.media_id > medias.id

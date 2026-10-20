@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "darkMode": true,
+  "gridEnabling": false,
+  "detailLevel": "All",
+  "tablePositions": [
+    {
+      "name": "users",
+      "schemaName": "public",
+      "x": 0,
+      "y": 50
+    },
+    {
+      "name": "students",
+      "schemaName": "public",
+      "x": 456.8738376049307,
+      "y": -109.75908787623241
+    },
+    {
+      "name": "teachers",
+      "schemaName": "public",
+      "x": 474.1397463427578,
+      "y": 287.9545728396483
+    },
+    {
+      "name": "courses",
+      "schemaName": "public",
+      "x": 1299.0710085956168,
+      "y": 428.6149285260751
+    },
+    {
+      "name": "subjects",
+      "schemaName": "public",
+      "x": 864.0187696939361,
+      "y": 159.37102014900034
+    },
+    {
+      "name": "grades",
+      "schemaName": "public",
+      "x": 1507.1917703560084,
+      "y": -73.09681611920026
+    }
+  ],
+  "tableGroupCollapseStates": [],
+  "stickyNoteLayouts": [],
+  "referencePaths": []
+}

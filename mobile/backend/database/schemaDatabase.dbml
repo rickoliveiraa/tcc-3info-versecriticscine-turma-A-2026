@@ -1,0 +1,68 @@
+
+Project CadastroAlunos {
+  database_type: 'SQLite'
+  Note: 'Sistema para controle de alunos e professores.'
+}
+
+Enum access_level_enum {
+  ADMIN
+  USER
+}
+
+Table users {
+  id integer [pk, increment]
+  name text [not null]
+  email text [not null, unique]
+  email_code text
+  email_verified integer [default: 0]
+  password text [not null, default: 'Ab1234cd@']
+  cellphone text [note: '(99)99999-9999']
+  access_nivel access_level_enum [not null, default: 'USER']
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table students {
+  id integer [pk, increment]
+  user_id integer [not null, unique, ref: > users.id]
+  rm_number text [not null, unique]
+  course text [not null]
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table teachers {
+  id integer [pk, increment]
+  user_id integer [not null, unique, ref: > users.id]
+  registration_number text [not null, unique]
+  department text [not null]
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table courses {
+  id integer [pk, increment]
+  name text [not null]
+  code text [not null, unique]
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table subjects {
+  id integer [pk, increment]
+  name text [not null]
+  code text [not null, unique]
+  course_id integer [not null, ref: > courses.id]
+  teacher_id integer [not null, ref: > teachers.id]
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
+
+Table grades {
+  id integer [pk, increment]
+  student_id integer [not null, ref: > students.id]
+  subject_id integer [not null, ref: > subjects.id]
+  grade integer [not null, note: 'Valor entre 0 e 100']
+  created_at datetime [default: `CURRENT_TIMESTAMP`]
+  updated_at datetime [default: `CURRENT_TIMESTAMP`]
+}
