@@ -1,628 +1,889 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { 
-  StyleSheet, Text, View, Image, StatusBar, TouchableOpacity, 
-  SafeAreaView, ScrollView, ImageBackground, Platform, Dimensions, ActivityIndicator,
-  Animated, Easing, Linking
+import {
+  StyleSheet,
+  Text,
+  View,
+  Image,
+  StatusBar,
+  TouchableOpacity,
+  SafeAreaView,
+  ScrollView,
+  ImageBackground,
+  Dimensions,
+  ActivityIndicator,
+  Animated,
+  Linking,
 } from 'react-native';
-import { Ionicons, Feather } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
+
+import {
+  Ionicons,
+  Feather,
+  MaterialCommunityIcons,
+} from '@expo/vector-icons';
 
 import TelaLogin from './teladelogin';
 import TelaCadastro from './teladecadastro';
-import RecuperarConta from './recuperarconta'; 
 import EscolhaGeneros from './escolhageneros';
 import Home from './home';
 
-const { width, height } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-const FALLBACK_POSTERS = [
+const CORES = {
+  fundo: '#050914',
+  fundoCard: '#0C1424',
+  azul: '#3984FF',
+  azulClaro: '#60A5FA',
+  branco: '#FFFFFF',
+  texto: '#D5DFEF',
+  textoSecundario: '#8B9BB3',
+  borda: 'rgba(148,163,184,0.16)',
+  dourado: '#FBBF24',
+};
+
+const POSTER_FALLBACKS = [
   require('./assets/notebook.jpg'),
   require('./assets/challengers.jpg'),
-  require('./assets/panico4.webp')
+  require('./assets/panico4.webp'),
+];
+
+const LOGO = require('./assets/logo-cinetrack.png');
+
+const TITULOS_FALLBACK = [
+  'The Notebook',
+  'Challengers',
+  'Pânico 4',
 ];
 
 export default function App() {
   const [telaAtual, setTelaAtual] = useState('HomeLanding');
-  const [topMovies, setTopMovies] = useState([]);
-  const [loadingMovies, setLoadingMovies] = useState(true);
-  
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const card1Y = useRef(new Animated.Value(0)).current;
-  const card2Y = useRef(new Animated.Value(0)).current;
-  const card3Y = useRef(new Animated.Value(0)).current;
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const logoScaleAnim = useRef(new Animated.Value(0.9)).current;
-  const logoGlowAnim = useRef(new Animated.Value(0)).current;
+  const [filmes, setFilmes] = useState([]);
+  const [carregandoFilmes, setCarregandoFilmes] = useState(true);
 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const logoAnim = useRef(new Animated.Value(0.92)).current;
+  const cardLeftAnim = useRef(new Animated.Value(24)).current;
+  const cardCenterAnim = useRef(new Animated.Value(38)).current;
+  const cardRightAnim = useRef(new Animated.Value(24)).current;
+
+  // Carrega os filmes quando a landing page é exibida.
   useEffect(() => {
-    async function fetchTopMovies() {
+    if (telaAtual !== 'HomeLanding') return;
+
+    let ativo = true;
+
+    async function buscarFilmes() {
+      setCarregandoFilmes(true);
+
       try {
         const TMDB_KEY = '5c1853c10d9752023da5ddce4ada3b77';
-        const response = await fetch(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&language=pt-BR&page=1`);
-        const data = await response.json();
-        
-        if (data.results && data.results.length >= 3) {
-          setTopMovies(data.results.slice(0, 3));
-        } else {
-          setTopMovies(null);
+
+        const resposta = await fetch(
+          `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&language=pt-BR&page=1`
+        );
+
+        if (!resposta.ok) {
+          throw new Error('Não foi possível carregar os filmes.');
         }
-      } catch (error) {
-        console.error("Erro ao buscar filmes populares:", error);
-        setTopMovies(null);
+
+        const dados = await resposta.json();
+
+        if (ativo && Array.isArray(dados.results)) {
+          setFilmes(dados.results.slice(0, 3));
+        }
+      } catch (erro) {
+        console.warn('Erro ao carregar filmes do TMDB:', erro);
+        // A tela continua funcionando com os pôsteres locais.
       } finally {
-        setLoadingMovies(false);
+        if (ativo) {
+          setCarregandoFilmes(false);
+        }
       }
     }
 
-    if (telaAtual === 'HomeLanding') {
-      fetchTopMovies();
-    }
+    buscarFilmes();
+
+    return () => {
+      ativo = false;
+    };
   }, [telaAtual]);
 
+  // Reinicia as animações ao voltar para a landing page.
   useEffect(() => {
-    Animated.sequence([
-      Animated.parallel([
-        Animated.spring(logoScaleAnim, {
-          toValue: 1,
-          friction: 8,
-          tension: 50,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 800,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-      ]),
-      Animated.parallel([
-        Animated.spring(card1Y, { toValue: 1, friction: 9, tension: 40, useNativeDriver: true }),
-        Animated.spring(card2Y, { toValue: 1, friction: 9, tension: 40, useNativeDriver: true }),
-        Animated.spring(card3Y, { toValue: 1, friction: 9, tension: 40, useNativeDriver: true }),
-      ]),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(floatAnim, {
-            toValue: 1,
-            duration: 4000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(floatAnim, {
-            toValue: -1,
-            duration: 4000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ])
-      ),
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(logoGlowAnim, {
-            toValue: 1,
-            duration: 2000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-          Animated.timing(logoGlowAnim, {
-            toValue: 0,
-            duration: 2000,
-            easing: Easing.inOut(Easing.sin),
-            useNativeDriver: true,
-          }),
-        ])
-      ),
+    if (telaAtual !== 'HomeLanding') return;
+
+    fadeAnim.setValue(0);
+    logoAnim.setValue(0.92);
+    cardLeftAnim.setValue(24);
+    cardCenterAnim.setValue(38);
+    cardRightAnim.setValue(24);
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 650,
+        useNativeDriver: true,
+      }),
+      Animated.spring(logoAnim, {
+        toValue: 1,
+        friction: 7,
+        tension: 45,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardLeftAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 42,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardCenterAnim, {
+        toValue: 0,
+        friction: 7,
+        tension: 38,
+        useNativeDriver: true,
+      }),
+      Animated.spring(cardRightAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 42,
+        useNativeDriver: true,
+      }),
     ]).start();
-  }, []);
+  }, [
+    telaAtual,
+    fadeAnim,
+    logoAnim,
+    cardLeftAnim,
+    cardCenterAnim,
+    cardRightAnim,
+  ]);
 
-  if (telaAtual === 'Cadastro') return <TelaCadastro onVoltar={() => setTelaAtual('HomeLanding')} onCadastroSucesso={() => setTelaAtual('Generos')} />;
-  if (telaAtual === 'Login') return <TelaLogin onVoltar={() => setTelaAtual('HomeLanding')} onLoginSucesso={() => setTelaAtual('Home')} />;
-  if (telaAtual === 'Recuperar') return <RecuperarConta onVoltar={() => setTelaAtual('HomeLanding')} />;
-  if (telaAtual === 'Generos') return <EscolhaGeneros onContinuar={() => setTelaAtual('Home')} onPular={() => setTelaAtual('Home')} />;
-  if (telaAtual === 'Home') return <Home onLogout={() => setTelaAtual('HomeLanding')} />;
+  // Navegação.
+  if (telaAtual === 'Cadastro') {
+    return (
+      <TelaCadastro
+        onVoltar={() => setTelaAtual('HomeLanding')}
+        onEntrar={() => setTelaAtual('Login')}
+        onCadastroSucesso={() => setTelaAtual('Generos')}
+      />
+    );
+  }
 
-  const cardLeft = topMovies ? topMovies[0] : null;
-  const cardCenter = topMovies ? topMovies[1] : null;
-  const cardRight = topMovies ? topMovies[2] : null;
+  if (telaAtual === 'Login') {
+    return (
+      <TelaLogin
+        onVoltar={() => setTelaAtual('HomeLanding')}
+        onLoginSucesso={() => setTelaAtual('Home')}
+      />
+    );
+  }
 
-  const getPosterSource = (movieObj, fallbackIndex) => {
-    if (movieObj && movieObj.poster_path) return { uri: `https://image.tmdb.org/t/p/w500${movieObj.poster_path}` };
-    return FALLBACK_POSTERS[fallbackIndex];
+  if (telaAtual === 'Generos') {
+    return (
+      <EscolhaGeneros
+        onContinuar={() => setTelaAtual('Home')}
+        onPular={() => setTelaAtual('Home')}
+      />
+    );
+  }
+
+  if (telaAtual === 'Home') {
+    return <Home onLogout={() => setTelaAtual('HomeLanding')} />;
+  }
+
+  const obterPoster = (filme, indice) => {
+    if (filme?.poster_path) {
+      return {
+        uri: `https://image.tmdb.org/t/p/w500${filme.poster_path}`,
+      };
+    }
+
+    return POSTER_FALLBACKS[indice];
   };
 
-  const getTitle = (movieObj, fallbackTitles) => movieObj ? (movieObj.title || movieObj.original_title) : fallbackTitles;
+  const obterTitulo = (filme, indice) => {
+    if (filme?.title) return filme.title;
+    if (filme?.name) return filme.name;
+    return TITULOS_FALLBACK[indice];
+  };
 
-  const floatY = floatAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: [-6, 6],
-  });
-
-  const abrirInstagram = async () => {
-    const instagramUrl = 'https://www.instagram.com/cinetrack';
+  const abrirLink = async (url) => {
     try {
-      await Linking.openURL(instagramUrl);
-    } catch (error) {
-      console.error('Erro ao abrir Instagram:', error);
+      await Linking.openURL(url);
+    } catch (erro) {
+      console.warn('Não foi possível abrir o link.', erro);
     }
   };
 
-  const abrirTwitter = async () => {
-    const twitterUrl = 'https://twitter.com/cinetrack';
-    try {
-      await Linking.openURL(twitterUrl);
-    } catch (error) {
-      console.error('Erro ao abrir Twitter:', error);
-    }
+  const renderEstrelas = (quantidade = 5, tamanho = 12) => (
+    <View style={styles.estrelas}>
+      {Array.from({ length: 5 }, (_, indice) => (
+        <Ionicons
+          key={indice}
+          name={indice < quantidade ? 'star' : 'star-outline'}
+          size={tamanho}
+          color={indice < quantidade ? CORES.dourado : '#64748B'}
+          style={{ marginRight: 2 }}
+        />
+      ))}
+    </View>
+  );
+
+  const renderOndaSonora = () => {
+    const alturas = [8, 15, 10, 21, 13, 17, 7];
+
+    return (
+      <View style={styles.ondaSonora}>
+        {alturas.map((altura, indice) => (
+          <View
+            key={indice}
+            style={[styles.barraOnda, { height: altura }]}
+          />
+        ))}
+        <Text style={styles.ondaLegenda}>TRILHA SONORA</Text>
+      </View>
+    );
   };
+
+  const renderCardFilme = ({ filme, indice, tipo, animacao }) => {
+    const central = tipo === 'central';
+
+    return (
+      <Animated.View
+        style={[
+          styles.cardFilme,
+          central ? styles.cardCentral : styles.cardLateral,
+          tipo === 'esquerda' && styles.cardEsquerdo,
+          tipo === 'direita' && styles.cardDireito,
+          {
+            opacity: animacao.interpolate({
+              inputRange: [0, 38],
+              outputRange: [1, 0.55],
+              extrapolate: 'clamp',
+            }),
+            transform: [{ translateY: animacao }],
+          },
+        ]}
+      >
+        <ImageBackground
+          source={obterPoster(filme, indice)}
+          style={styles.poster}
+          resizeMode="cover"
+          imageStyle={styles.posterImagem}
+        >
+          <View style={styles.posterSombra} />
+
+          {central && (
+            <View style={styles.seloPopular}>
+              <Ionicons name="flame" size={14} color="#FFFFFF" />
+              <Text style={styles.seloPopularTexto}>EM DESTAQUE</Text>
+            </View>
+          )}
+
+          <View style={styles.infoFilme}>
+            <Text
+              numberOfLines={2}
+              style={central ? styles.tituloCentral : styles.tituloLateral}
+            >
+              {obterTitulo(filme, indice)}
+            </Text>
+
+            {renderEstrelas(central ? 5 : 4, central ? 13 : 11)}
+
+            {central && renderOndaSonora()}
+          </View>
+        </ImageBackground>
+      </Animated.View>
+    );
+  };
+
+  const filmesExibidos = [
+    filmes[0] || null,
+    filmes[1] || null,
+    filmes[2] || null,
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#020617" translucent={Platform.OS === 'android'} />
-      
-      <View style={styles.cinemaBackground}>
-        <View style={styles.projectorLightLeft} />
-        <View style={styles.projectorLightRight} />
-        <View style={styles.vignetteOverlay} />
-      </View>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={CORES.fundo}
+      />
 
-      <ScrollView 
-        contentContainerStyle={styles.scrollContent} 
+      <View pointerEvents="none" style={styles.fundo} />
+
+      <ScrollView
+        contentContainerStyle={styles.conteudo}
         showsVerticalScrollIndicator={false}
-        nestedScrollEnabled={true}
+        bounces={false}
       >
-        
-        <View style={styles.heroSection}>
-          {loadingMovies ? (
-            <ActivityIndicator size="large" color="#3b82f6" style={{ marginTop: 80 }} />
-          ) : (
-            <Animated.View style={[styles.floatCards, { opacity: fadeAnim }]}>
-              
-              <Animated.View 
-                style={[
-                  styles.fcard, 
-                  styles.fcardSideLeft,
-                  {
-                    transform: [
-                      { translateY: card1Y.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
-                      { translateY: floatY },
-                    ]
-                  }
-                ]}
-              >
-                <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#1e3a8a' }} />
-                <ImageBackground source={getPosterSource(cardLeft, 0)} style={styles.posterBg} resizeMode="cover">
-                  <View style={styles.cardGradient} />
-                  <View style={styles.cardInternalBottom}>
-                    <Text numberOfLines={1} style={styles.cardTitle}>{getTitle(cardLeft, 'Diário de uma Paixão')}</Text>
-                    <View style={styles.cardStars}>
-                      {[1, 2, 3, 4, 5].map((s) => <Ionicons key={s} name="star" size={9} color="#fbbf24" style={{marginRight: 2}} />)}
-                    </View>
-                  </View>
-                </ImageBackground>
-              </Animated.View>
+        {/* CARROSSEL: permanece visível durante o carregamento */}
+        <View style={styles.secaoDestaques}>
+          <View style={styles.carrossel}>
+            {renderCardFilme({
+              filme: filmesExibidos[0],
+              indice: 0,
+              tipo: 'esquerda',
+              animacao: cardLeftAnim,
+            })}
 
-              <Animated.View 
-                style={[
-                  styles.fcard, 
-                  styles.fcardCenter,
-                  {
-                    transform: [
-                      { translateY: card2Y.interpolate({ inputRange: [0, 1], outputRange: [60, 0] }) },
-                      { translateY: floatY },
-                    ]
-                  }
-                ]}
-              >
-                <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#1d4ed8' }} />
-                <ImageBackground source={getPosterSource(cardCenter, 1)} style={styles.posterBg} resizeMode="cover">
-                  <View style={styles.cardGradient} />
-                  <View style={styles.cardInternalBottom}>
-                    <Text numberOfLines={1} style={[styles.cardTitle, { fontSize: 13 }]}>
-                      {getTitle(cardCenter, 'Challengers')}
-                    </Text>
-                    <View style={styles.centerStarsRow}>
-                      <View style={styles.cardStars}>
-                        {[1, 2, 3, 4, 5].map((s) => <Ionicons key={s} name="star" size={10} color="#fbbf24" style={{marginRight: 2}} />)}
-                      </View>
-                      <View style={styles.miniAudioWave}>
-                        <View style={[styles.miniWaveLine, { height: 4 }]} />
-                        <View style={[styles.miniWaveLine, { height: 10 }]} />
-                        <View style={[styles.miniWaveLine, { height: 6 }]} />
-                        <View style={[styles.miniWaveLine, { height: 12 }]} />
-                        <View style={[styles.miniWaveLine, { height: 5 }]} />
-                      </View>
-                    </View>
-                  </View>
-                </ImageBackground>
-              </Animated.View>
+            {renderCardFilme({
+              filme: filmesExibidos[1],
+              indice: 1,
+              tipo: 'central',
+              animacao: cardCenterAnim,
+            })}
 
-              <Animated.View 
-                style={[
-                  styles.fcard, 
-                  styles.fcardSideRight,
-                  {
-                    transform: [
-                      { translateY: card3Y.interpolate({ inputRange: [0, 1], outputRange: [40, 0] }) },
-                      { translateY: floatY },
-                    ]
-                  }
-                ]}
-              >
-                <View style={{ ...StyleSheet.absoluteFillObject, backgroundColor: '#0f172a' }} />
-                <ImageBackground source={getPosterSource(cardRight, 2)} style={styles.posterBg} resizeMode="cover">
-                  <View style={styles.cardGradient} />
-                  <View style={styles.cardInternalBottom}>
-                    <Text numberOfLines={1} style={styles.cardTitle}>{getTitle(cardRight, 'Pânico VI')}</Text>
-                    <View style={styles.cardStars}>
-                      {[1, 2, 3, 4].map((s) => <Ionicons key={s} name="star" size={9} color="#fbbf24" style={{marginRight: 2}} />)}
-                      <Ionicons name="star" size={9} color="#334155" />
-                    </View>
-                  </View>
-                </ImageBackground>
-              </Animated.View>
+            {renderCardFilme({
+              filme: filmesExibidos[2],
+              indice: 2,
+              tipo: 'direita',
+              animacao: cardRightAnim,
+            })}
+          </View>
 
-            </Animated.View>
+          {carregandoFilmes && (
+            <View style={styles.statusCarregamento}>
+              <ActivityIndicator size="small" color={CORES.azul} />
+              <Text style={styles.carregandoTexto}>
+                Atualizando destaques...
+              </Text>
+            </View>
           )}
         </View>
 
-        <Animated.View style={[styles.mainContent, { opacity: fadeAnim }]}>
-          
-          {/* LOGO PREMIUM COM EFEITO GLOW */}
-          <View style={styles.logoContainer}>
-            {/* Glow animado externo */}
-            <Animated.View 
-              style={[
-                styles.logoGlowOuter,
-                { 
-                  opacity: logoGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [0.4, 0.8] }),
-                  transform: [{ scale: logoGlowAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] }) }]
-                }
-              ]}
+        {/* IDENTIDADE VISUAL */}
+        <Animated.View
+          style={[
+            styles.secaoMarca,
+            {
+              opacity: fadeAnim,
+              transform: [{ scale: logoAnim }],
+            },
+          ]}
+        >
+          <View style={styles.marcaLinha}>
+            <Image
+              source={LOGO}
+              style={styles.logoImagem}
+              resizeMode="contain"
+              accessibilityLabel="Logo CineTrack"
             />
-            
-            {/* Container principal com gradiente */}
-            <Animated.View 
-              style={[
-                styles.logoCircle,
-                { transform: [{ scale: logoScaleAnim }] }
-              ]}
-            >
-              <LinearGradient
-                colors={['#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.logoGradientBg}
-              >
-                {/* Caixa interna menor para esconder fundo preto */}
-                <View style={styles.logoInnerBox}>
-                  <Image 
-                    source={require('./assets/logo.png')} 
-                    style={styles.logoReal}
-                    resizeMode="contain"
-                  />
-                </View>
-              </LinearGradient>
-            </Animated.View>
-            
-            <Text style={styles.logoText}>CINE<Text style={styles.logoBlueText}>TRACK</Text></Text>
-          </View>
-          
-          <Text style={styles.logoSubtext}>FILMES · SÉRIES · TRILHAS</Text>
 
-          <Text style={styles.descriptionText}>
-            Seu <Text style={styles.boldWhiteText}>diário audiovisual</Text> definitivo. Registre o que assiste, descubra trilhas sonoras e conecte-se com amigos — tudo em um só lugar.
-          </Text>
-
-          <View style={styles.pillsContainer}>
-            <View style={styles.pillItem}>
-              <Ionicons name="videocam-outline" size={12} color="#60a5fa" style={{ marginRight: 6 }} />
-              <Text style={styles.pillText}>Filmes & Séries</Text>
-            </View>
-            <View style={styles.pillItem}>
-              <Ionicons name="musical-notes-outline" size={12} color="#38bdf8" style={{ marginRight: 6 }} />
-              <Text style={styles.pillText}>Trilhas Sonoras</Text>
-            </View>
-            <View style={styles.pillItem}>
-              <Ionicons name="people-outline" size={12} color="#818cf8" style={{ marginRight: 6 }} />
-              <Text style={styles.pillText}>Conexões</Text>
-            </View>
-          </View>
-
-          <View style={styles.actionContainer}>
-            
-            <TouchableOpacity style={styles.btnRegister} activeOpacity={0.85} onPress={() => setTelaAtual('Cadastro')}>
-              <Text style={styles.btnRegisterText}>Criar conta gratuita</Text>
-              <Feather name="arrow-right" size={18} color="#ffffff" style={{ marginLeft: 8 }} />
-            </TouchableOpacity>
-
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.orText}>ou continue com</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            <View style={styles.socialButtonsRow}>
-              <TouchableOpacity 
-                style={styles.btnSocial} 
-                activeOpacity={0.8}
-                onPress={abrirInstagram}
-              >
-                <Ionicons name="logo-instagram" size={22} color="#E1306C" />
-                <Text style={styles.btnSocialText}>Instagram</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={styles.btnSocial} 
-                activeOpacity={0.8}
-                onPress={abrirTwitter}
-              >
-                <Ionicons name="logo-x" size={16} color="#ffffff" />
-                <Text style={styles.btnSocialText}>Twitter / X</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.btnLoginContainer} activeOpacity={0.8} onPress={() => setTelaAtual('Login')}>
-              <Text style={styles.btnLoginText}>
-                Já tem uma conta? <Text style={{ color: '#ffffff', fontWeight: '700' }}>Entrar</Text>
-              </Text>
-            </TouchableOpacity>
-
-            <Text style={styles.finePrint}>
-              Ao continuar, você aceita nossos <Text style={styles.linkText}>Termos de Uso</Text> e <Text style={styles.linkText}>Política de Privacidade</Text>.
+            <Text style={styles.nomeMarca}>
+              CINE<Text style={styles.nomeMarcaAzul}>TRACK</Text>
             </Text>
           </View>
+
+          <Text style={styles.submarca}>
+            FILMES  ·  SÉRIES  ·  TRILHAS
+          </Text>
         </Animated.View>
+
+        {/* DESCRIÇÃO */}
+        <Animated.View
+          style={[styles.secaoDescricao, { opacity: fadeAnim }]}
+        >
+          <Text style={styles.descricao}>
+            Seu{' '}
+            <Text style={styles.descricaoDestaque}>
+              diário audiovisual
+            </Text>{' '}
+            com a trilha sonora das obras que você ama — tudo em um só lugar.
+          </Text>
+        </Animated.View>
+
+        {/* RECURSOS */}
+        <Animated.View
+          style={[styles.recursos, { opacity: fadeAnim }]}
+        >
+          <View style={styles.etiquetaRecurso}>
+            <Ionicons name="videocam" size={16} color={CORES.azulClaro} />
+            <Text style={styles.textoRecurso}>Filmes & Séries</Text>
+          </View>
+
+          <View style={styles.etiquetaRecurso}>
+            <Ionicons name="musical-notes" size={16} color="#38BDF8" />
+            <Text style={styles.textoRecurso}>Trilha via Spotify</Text>
+          </View>
+
+          <View style={styles.etiquetaRecurso}>
+            <Ionicons name="people" size={16} color="#A5B4FC" />
+            <Text style={styles.textoRecurso}>Conexões</Text>
+          </View>
+        </Animated.View>
+
+        {/* AÇÕES PRINCIPAIS */}
+        <Animated.View style={[styles.acoes, { opacity: fadeAnim }]}>
+          <TouchableOpacity
+            style={styles.botaoCadastro}
+            activeOpacity={0.82}
+            onPress={() => setTelaAtual('Cadastro')}
+            accessibilityRole="button"
+          >
+            <MaterialCommunityIcons
+              name="account-plus"
+              size={22}
+              color="#FFFFFF"
+            />
+            <Text style={styles.textoBotaoCadastro}>
+              Criar conta gratuita
+            </Text>
+            <Feather name="arrow-right" size={19} color="#FFFFFF" />
+          </TouchableOpacity>
+
+          <View style={styles.divisorSocial}>
+            <View style={styles.linhaDivisor} />
+            <Text style={styles.textoDivisor}>ou continue com</Text>
+            <View style={styles.linhaDivisor} />
+          </View>
+
+          <View style={styles.linhaSocial}>
+            <TouchableOpacity
+              style={styles.botaoSocial}
+              activeOpacity={0.8}
+              onPress={() => abrirLink('https://www.instagram.com/')}
+              accessibilityRole="button"
+            >
+              <Ionicons name="logo-instagram" size={21} color="#F472B6" />
+              <Text style={styles.textoSocial}>Instagram</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.botaoSocial}
+              activeOpacity={0.8}
+              onPress={() => abrirLink('https://x.com/')}
+              accessibilityRole="button"
+            >
+              <Ionicons name="logo-x" size={19} color="#FFFFFF" />
+              <Text style={styles.textoSocial}>Twitter / X</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={styles.botaoEntrar}
+            activeOpacity={0.8}
+            onPress={() => setTelaAtual('Login')}
+            accessibilityRole="button"
+          >
+            <Text style={styles.textoEntrar}>
+              Já tenho uma conta —{' '}
+              <Text style={styles.textoEntrarDestaque}>Entrar</Text>
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.termos}>
+            Ao criar uma conta, você aceita nossos{' '}
+            <Text style={styles.linkTermos}>Termos</Text>
+            {' '}e{' '}
+            <Text style={styles.linkTermos}>Privacidade</Text>.
+          </Text>
+        </Animated.View>
+
+        <View style={styles.rodape}>
+          <View style={styles.pontoRodape} />
+          <Text style={styles.textoRodape}>CINETRACK</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
+const CARD_LATERAL = Math.min(132, SCREEN_WIDTH * 0.30);
+const CARD_CENTRAL = Math.min(190, SCREEN_WIDTH * 0.43);
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#020617' },
-  
-  cinemaBackground: { ...StyleSheet.absoluteFillObject, backgroundColor: '#020617', overflow: 'hidden' },
-  projectorLightLeft: {
-    position: 'absolute', top: -120, left: -80, width: 350, height: 500,
-    backgroundColor: 'rgba(37, 99, 235, 0.30)',
-    transform: [{ rotate: '25deg' }], filter: 'blur(80px)', opacity: 0.9
+  container: {
+    flex: 1,
+    backgroundColor: CORES.fundo,
   },
-  projectorLightRight: {
-    position: 'absolute', top: 80, right: -100, width: 400, height: 600,
-    backgroundColor: 'rgba(14, 165, 233, 0.20)',
-    transform: [{ rotate: '-15deg' }], filter: 'blur(90px)', opacity: 0.8
-  },
-  vignetteOverlay: {
+
+  fundo: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2, 6, 23, 0.4)'
+    backgroundColor: CORES.fundo,
   },
 
-  scrollContent: { paddingBottom: 40, flexGrow: 1 },
-  
-  heroSection: { 
-    width: '100%', 
-    height: 300, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    position: 'relative', 
-    marginTop: 5,
-    minHeight: 300,
-  },
-  floatCards: { 
-    flexDirection: 'row', 
-    alignItems: 'flex-end', 
-    justifyContent: 'center', 
-    width: '100%', 
-    paddingTop: 20,
-  },
-  
-  fcard: { 
-    borderRadius: 20, 
-    overflow: 'hidden', 
-    backgroundColor: '#070b19', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255, 255, 255, 0.15)', 
-    shadowColor: '#2563eb', 
-    shadowOffset: { width: 0, height: 12 }, 
-    shadowOpacity: 0.6, 
-    shadowRadius: 16, 
-    elevation: 12 
-  },
-  posterBg: { flex: 1, width: '100%', height: '100%', justifyContent: 'flex-end' },
-  cardGradient: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(2,6,23,0.4)' },
-  cardInternalBottom: { paddingHorizontal: 10, paddingVertical: 12, zIndex: 2 },
-  cardTitle: { 
-    fontSize: 11, 
-    fontWeight: '800', 
-    color: '#ffffff', 
-    marginBottom: 5, 
-    textShadowColor: '#000', 
-    textShadowOffset: {width: 0, height: 1}, 
-    textShadowRadius: 3, 
-    letterSpacing: 0.3 
-  },
-  
-  centerStarsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 5 },
-  cardStars: { flexDirection: 'row' },
-  
-  miniAudioWave: { flexDirection: 'row', gap: 2, alignItems: 'flex-end', height: 12 },
-  miniWaveLine: { width: 2.5, backgroundColor: '#60a5fa', borderRadius: 1, shadowColor: '#60a5fa', shadowOpacity: 0.8, shadowRadius: 2 },
-  
-  fcardSideLeft: { width: 100, height: 150, transform: [{ rotate: '-8deg' }, { translateX: 18 }, { translateY: -10 }], opacity: 0.85 },
-  fcardSideRight: { width: 100, height: 150, transform: [{ rotate: '8deg' }, { translateX: -18 }, { translateY: -10 }], opacity: 0.85 },
-  fcardCenter: { 
-    width: 140, 
-    height: 210, 
-    zIndex: 20, 
-    borderColor: 'rgba(59, 130, 246, 0.6)', 
-    borderWidth: 2,
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 15 },
-    shadowOpacity: 0.7,
-    shadowRadius: 20,
-    elevation: 18
+  conteudo: {
+    flexGrow: 1,
+    paddingBottom: 28,
   },
 
-  mainContent: { paddingHorizontal: 24, alignItems: 'center', marginTop: 10 },
-  
-  // LOGO PREMIUM COM GLOW ANIMADO
-  logoContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginTop: 10,
-    marginBottom: 5,
-    position: 'relative',
+  secaoDestaques: {
+    height: 320,
+    width: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 12,
   },
-  logoGlowOuter: {
+
+  carrossel: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+  },
+
+  statusCarregamento: {
     position: 'absolute',
-    width: 110,
-    height: 110,
-    borderRadius: 28,
-    backgroundColor: 'rgba(96, 165, 250, 0.5)',
-    top: -5,
-    left: -5,
-    zIndex: 0,
-    filter: 'blur(15px)',
+    bottom: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  logoCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 24,
+
+  carregandoTexto: {
+    color: CORES.textoSecundario,
+    fontSize: 12,
+  },
+
+  cardFilme: {
     overflow: 'hidden',
-    marginRight: 16,
-    shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.6,
-    shadowRadius: 20,
-    elevation: 15,
-    zIndex: 1,
+    borderRadius: 20,
+    backgroundColor: CORES.fundoCard,
+    borderWidth: 1,
+    borderColor: CORES.borda,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.34,
+    shadowRadius: 14,
+    elevation: 9,
   },
-  logoGradientBg: {
-    width: 90,
-    height: 90,
-    borderRadius: 24,
-    justifyContent: 'center',
+
+  cardLateral: {
+    width: CARD_LATERAL,
+    height: 192,
+    opacity: 0.86,
+  },
+
+  cardCentral: {
+    width: CARD_CENTRAL,
+    height: 260,
+    marginHorizontal: -1,
+    zIndex: 3,
+    borderWidth: 2,
+    borderColor: CORES.azul,
+    shadowColor: CORES.azul,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.23,
+    shadowRadius: 13,
+    elevation: 13,
+  },
+
+  cardEsquerdo: {
+    marginRight: -3,
+    transform: [{ rotate: '-3deg' }],
+  },
+
+  cardDireito: {
+    marginLeft: -3,
+    transform: [{ rotate: '3deg' }],
+  },
+
+  poster: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-end',
+  },
+
+  posterImagem: {
+    borderRadius: 18,
+  },
+
+  posterSombra: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.39)',
+  },
+
+  infoFilme: {
+    paddingHorizontal: 10,
+    paddingBottom: 13,
+    paddingTop: 22,
+  },
+
+  tituloLateral: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+    marginBottom: 6,
+  },
+
+  tituloCentral: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 19,
+    marginBottom: 7,
+  },
+
+  estrelas: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  logoInnerBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
-    overflow: 'hidden',
+
+  seloPopular: {
+    position: 'absolute',
+    top: 12,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#EF4444',
+  },
+
+  seloPopularTexto: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+  },
+
+  ondaSonora: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 27,
+    gap: 3,
+    marginTop: 8,
+  },
+
+  barraOnda: {
+    width: 3,
+    borderRadius: 3,
+    backgroundColor: CORES.azul,
+  },
+
+  ondaLegenda: {
+    marginLeft: 5,
+    color: '#91A5C4',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+
+  secaoMarca: {
+    alignItems: 'center',
+    marginTop: 14,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+  },
+
+  marcaLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+
+  logoImagem: {
+    width: 90,
+    height: 90,
     backgroundColor: 'transparent',
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  logoReal: {
-    width: 60,
-    height: 60,
+
+  nomeMarca: {
+    color: '#FFFFFF',
+    fontSize: Math.min(31, SCREEN_WIDTH * 0.075),
+    fontWeight: '900',
+    letterSpacing: 0.5,
   },
-  logoText: { 
-    fontSize: 30, 
-    fontWeight: '900', 
-    color: '#ffffff', 
-    letterSpacing: 2.5,
-    textShadowColor: '#3b82f6', 
-    textShadowOffset: {width: 0, height: 0}, 
-    textShadowRadius: 15 
+
+  nomeMarcaAzul: {
+    color: CORES.azul,
   },
-  logoBlueText: { color: '#60a5fa' },
-  logoSubtext: { 
-    fontSize: 10, 
-    color: '#94a3b8', 
-    letterSpacing: 3.5, 
-    marginTop: 6, 
+
+  submarca: {
+    marginTop: 8,
+    color: '#7787A0',
+    fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 3,
+  },
+
+  secaoDescricao: {
+    paddingHorizontal: 24,
+    marginTop: 22,
+  },
+
+  descricao: {
+    color: '#A8B6CB',
+    fontSize: 15,
+    lineHeight: 24,
     textAlign: 'center',
   },
-  
-  descriptionText: { 
-    fontSize: 15, 
-    color: '#cbd5e1', 
-    textAlign: 'center', 
-    lineHeight: 23, 
-    marginTop: 18, 
-    maxWidth: '95%',
-    paddingHorizontal: 5,
+
+  descricaoDestaque: {
+    color: '#FFFFFF',
+    fontWeight: '800',
   },
-  boldWhiteText: { color: '#ffffff', fontWeight: '700' },
-  
-  pillsContainer: { 
-    flexDirection: 'row', 
-    gap: 8, 
-    justifyContent: 'center', 
-    marginTop: 24, 
-    flexWrap: 'wrap',
-    paddingHorizontal: 10,
-  },
-  pillItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 7, 
-    paddingHorizontal: 12, 
-    borderRadius: 28, 
-    backgroundColor: 'rgba(255, 255, 255, 0.05)', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255, 255, 255, 0.1)' 
-  },
-  pillText: { fontSize: 11, color: '#f8fafc', fontWeight: '600' },
-  
-  actionContainer: { width: '100%', marginTop: 30 },
-  
-  btnRegister: { 
-    width: '100%', 
-    height: 56, 
-    borderRadius: 16, 
-    backgroundColor: '#2563eb',
-    flexDirection: 'row', 
-    alignItems: 'center', 
+
+  recursos: {
+    flexDirection: 'row',
     justifyContent: 'center',
-    shadowColor: '#2563eb', 
-    shadowOffset: { width: 0, height: 8 }, 
-    shadowOpacity: 0.6, 
-    shadowRadius: 12, 
-    elevation: 10 
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 14,
+    marginTop: 23,
   },
-  btnRegisterText: { color: '#ffffff', fontSize: 16, fontWeight: '800', letterSpacing: 0.3 },
-  
-  dividerRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.1)' },
-  orText: { fontSize: 12, color: '#64748b', paddingHorizontal: 12, fontWeight: '600' },
-  
-  socialButtonsRow: { flexDirection: 'row', gap: 12, marginBottom: 14 },
-  btnSocial: { 
-    flex: 1, 
-    height: 52, 
-    borderRadius: 14, 
-    backgroundColor: 'rgba(255, 255, 255, 0.06)', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255, 255, 255, 0.12)', 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center' 
+
+  etiquetaRecurso: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    minHeight: 39,
+    paddingHorizontal: 13,
+    borderRadius: 22,
+    backgroundColor: '#101827',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.13)',
   },
-  btnSocialText: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
-  
-  btnLoginContainer: { 
-    width: '100%', 
-    height: 52, 
-    borderRadius: 14, 
-    backgroundColor: 'transparent', 
-    borderWidth: 1, 
-    borderColor: 'rgba(255, 255, 255, 0.15)', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginTop: 6 
+
+  textoRecurso: {
+    color: '#DCE5F3',
+    fontSize: 12,
+    fontWeight: '700',
   },
-  btnLoginText: { fontSize: 14, color: '#cbd5e1', fontWeight: '600' },
-  
-  finePrint: { 
-    fontSize: 11, 
-    color: '#64748b', 
-    marginTop: 24, 
-    textAlign: 'center', 
-    lineHeight: 16,
-    paddingHorizontal: 10,
+
+  acoes: {
+    width: '100%',
+    alignItems: 'center',
+    marginTop: 26,
+    paddingHorizontal: 20,
   },
-  linkText: { color: '#60a5fa', fontWeight: '700' },
+
+  botaoCadastro: {
+    width: '100%',
+    minHeight: 56,
+    borderRadius: 16,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: CORES.azul,
+    borderWidth: 1,
+    borderColor: 'rgba(147,197,253,0.40)',
+    shadowColor: CORES.azul,
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 7,
+  },
+
+  textoBotaoCadastro: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+
+  divisorSocial: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 24,
+    marginBottom: 15,
+  },
+
+  linhaDivisor: {
+    flex: 1,
+    height: 1,
+    backgroundColor: 'rgba(148,163,184,0.15)',
+  },
+
+  textoDivisor: {
+    color: '#7888A1',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  linhaSocial: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 12,
+  },
+
+  botaoSocial: {
+    flex: 1,
+    minHeight: 49,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: 15,
+    backgroundColor: '#101827',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.15)',
+  },
+
+  textoSocial: {
+    color: '#F1F5F9',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  botaoEntrar: {
+    width: '100%',
+    minHeight: 50,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 13,
+    borderRadius: 15,
+    backgroundColor: '#0D1524',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.14)',
+  },
+
+  textoEntrar: {
+    color: '#A6B4C9',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  textoEntrarDestaque: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+
+  termos: {
+    color: '#77869D',
+    textAlign: 'center',
+    fontSize: 11,
+    lineHeight: 18,
+    marginTop: 18,
+    paddingHorizontal: 8,
+  },
+
+  linkTermos: {
+    color: '#93C5FD',
+    fontWeight: '800',
+  },
+
+  rodape: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    marginTop: 23,
+    paddingBottom: 8,
+  },
+
+  pontoRodape: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: CORES.azul,
+  },
+
+  textoRodape: {
+    color: '#53647D',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
 });
