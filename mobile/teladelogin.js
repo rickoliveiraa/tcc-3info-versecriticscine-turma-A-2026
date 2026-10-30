@@ -1,5 +1,5 @@
-
 import React, { useState } from 'react';
+
 import {
   View,
   Text,
@@ -14,12 +14,13 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
+
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// O endereço do servidor será configurado quando conectarmos o backend.
-// Não coloque aqui o endereço do site; precisamos do endereço da API.
-const API_URL = process.env.EXPO_PUBLIC_API_URL;
+// API oficial de login do CineTrack
+const API_URL =
+  'https://outlets-univ-dirt-shorts.trycloudflare.com/TCC/TCC/api/login.php';
 
 export default function TelaLogin({
   onVoltar,
@@ -42,62 +43,57 @@ export default function TelaLogin({
       return;
     }
 
-    if (!emailLimpo.includes('@')) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailLimpo)) {
       Alert.alert('E-mail inválido', 'Confira o e-mail digitado.');
       return;
     }
 
-    if (!API_URL) {
-      Alert.alert(
-        'Servidor não configurado',
-        'A tela está pronta, mas ainda precisamos configurar o endereço do servidor do CineTrack e confirmar a rota de login do sistema web.'
-      );
-      return;
-    }
+    if (carregando) return;
 
     setCarregando(true);
 
     try {
-      const resposta = await fetch(
-        `${API_URL.replace(/\/+$/, '')}/api/auth/login`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-          },
-          body: JSON.stringify({
-            email: emailLimpo,
-            password: senha,
-          }),
-        }
-      );
+      const dadosFormulario = new URLSearchParams();
 
-      const dados = await resposta.json().catch(() => ({}));
+      dadosFormulario.append('email', emailLimpo);
+      dadosFormulario.append('senha', senha);
 
-      if (!resposta.ok) {
+      const resposta = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: dadosFormulario.toString(),
+      });
+
+      const textoResposta = await resposta.text();
+
+      console.log('STATUS HTTP:', resposta.status);
+      console.log('RESPOSTA DA API:', textoResposta);
+
+      let dados;
+
+      try {
+        dados = JSON.parse(textoResposta);
+      } catch (erro) {
         throw new Error(
-          dados.message ||
-            dados.error ||
-            (resposta.status === 401
-              ? 'E-mail ou senha incorretos.'
-              : 'Não foi possível entrar. Tente novamente.')
+          'O servidor retornou uma resposta inválida. Verifique o PHP e a conexão.'
         );
       }
 
-      // Aceita algumas estruturas comuns de resposta da API.
-      const usuario = dados.user || dados.usuario || dados;
-      const token = dados.token || dados.accessToken;
+      if (!resposta.ok || !dados.sucesso) {
+        throw new Error(
+          dados.mensagem || 'E-mail ou senha incorretos.'
+        );
+      }
+
+      const usuario = dados.usuario;
 
       if (!usuario || !usuario.id) {
         throw new Error(
-          'O servidor respondeu, mas não retornou os dados esperados do usuário.'
+          'O servidor não retornou os dados necessários do usuário.'
         );
-      }
-
-      // Salva a sessão no celular para uso posterior no aplicativo.
-      if (token) {
-        await AsyncStorage.setItem('@CineTrack:token', token);
       }
 
       await AsyncStorage.setItem(
@@ -105,15 +101,19 @@ export default function TelaLogin({
         JSON.stringify(usuario)
       );
 
-      // A tela anterior pode usar esta função para abrir a área logada.
-      if (onLoginSucesso) {
-        onLoginSucesso(usuario, token);
+      console.log('Login realizado:', usuario.email);
+
+      if (typeof onLoginSucesso === 'function') {
+        onLoginSucesso(usuario);
       } else {
         Alert.alert(
           'Login realizado!',
-          `Bem-vindo ao CineTrack, ${usuario.username || usuario.nome || 'usuário'}!`
+          `Bem-vindo ao CineTrack, ${
+            usuario.username || 'usuário'
+          }!`
         );
       }
+
     } catch (erro) {
       console.error('Erro no login:', erro);
 
@@ -122,6 +122,7 @@ export default function TelaLogin({
         erro.message ||
           'Verifique sua conexão e tente novamente.'
       );
+
     } finally {
       setCarregando(false);
     }
@@ -145,7 +146,11 @@ export default function TelaLogin({
                 onPress={onVoltar}
                 accessibilityLabel="Voltar"
               >
-                <Feather name="arrow-left" size={23} color="#FFFFFF" />
+                <Feather
+                  name="arrow-left"
+                  size={23}
+                  color="#FFFFFF"
+                />
               </TouchableOpacity>
             )}
 
@@ -157,7 +162,9 @@ export default function TelaLogin({
           </View>
 
           <View style={styles.conteudo}>
-            <Text style={styles.titulo}>Que bom ter você de volta!</Text>
+            <Text style={styles.titulo}>
+              Que bom ter você de volta!
+            </Text>
 
             <Text style={styles.subtitulo}>
               Entre na sua conta e continue acompanhando
@@ -259,7 +266,10 @@ export default function TelaLogin({
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Text style={styles.textoBotaoEntrar}>Entrar</Text>
+                    <Text style={styles.textoBotaoEntrar}>
+                      Entrar
+                    </Text>
+
                     <Feather
                       name="arrow-right"
                       size={19}
@@ -272,7 +282,9 @@ export default function TelaLogin({
 
             <View style={styles.divisor}>
               <View style={styles.linha} />
+
               <Text style={styles.textoDivisor}>OU</Text>
+
               <View style={styles.linha} />
             </View>
 
@@ -285,7 +297,9 @@ export default function TelaLogin({
                 onPress={onCriarConta}
                 disabled={!onCriarConta || carregando}
               >
-                <Text style={styles.linkCadastro}>Criar conta</Text>
+                <Text style={styles.linkCadastro}>
+                  Criar conta
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

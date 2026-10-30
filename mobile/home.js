@@ -1,538 +1,1359 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet, Text, View, StatusBar, TouchableOpacity, SafeAreaView,
-  ScrollView, Image, Platform, Dimensions, ActivityIndicator, RefreshControl,
-  Animated, Easing,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  Dimensions,
+  Image,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, Feather, MaterialCommunityIcons, AntDesign } from '@expo/vector-icons';
+import {
+  Ionicons,
+  Feather,
+  MaterialCommunityIcons,
+  AntDesign,
+} from '@expo/vector-icons';
+
 import { getFilmesEmAlta, getSeriesEmAlta } from './services';
 
+const LOGO_CINETRACK = require('./assets/logo-cinetrack.png');
+
 const COLORS = {
-  bg: '#000000',
-  surface: '#0a0a0a',
-  surfaceElevated: '#141414',
-  surfaceHigh: '#1a1a1a',
-  border: 'rgba(255, 255, 255, 0.08)',
-  borderSubtle: 'rgba(255, 255, 255, 0.04)',
-  primary: '#3b82f6',
-  primaryLight: '#60a5fa',
-  accent: '#fbbf24',
-  text: '#ffffff',
-  textPrimary: '#f5f5f5',
-  textSecondary: '#a3a3a3',
-  textTertiary: '#737373',
-  success: '#22c55e',
-  purple: '#a855f7',
-  pink: '#ec4899',
+  bg: '#050608',
+  surface: '#0D0F13',
+  elevated: '#12151B',
+  border: 'rgba(255,255,255,0.08)',
+  blue: '#3B82F6',
+  blueLight: '#60A5FA',
+  text: '#F5F7FA',
+  secondary: '#9CA3AF',
+  muted: '#687386',
+  green: '#22C55E',
+  yellow: '#FBBF24',
+  pink: '#EC4899',
 };
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = (width - 64) / 3;
+const CARD_WIDTH = Math.min(142, Math.max(112, (width - 76) / 3));
+const TMDB_IMAGE = 'https://image.tmdb.org/t/p/w500';
 
-const TMDB_API_KEY = '5c1853c10d9752023da5ddce4ada3b77';
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+const nomeUsuario = usuario =>
+  usuario?.username ||
+  usuario?.nome ||
+  usuario?.name ||
+  usuario?.email?.split('@')?.[0] ||
+  'Cinéfilo';
 
-export default function Home({ onLogout }) {
+const iniciais = nome =>
+  String(nome || 'C')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(p => p[0]?.toUpperCase() || '')
+    .join('') || 'C';
+
+const formatarData = valor => {
+  if (!valor) return 'Recentemente';
+
+  const data = new Date(valor);
+
+  if (Number.isNaN(data.getTime())) return 'Recentemente';
+
+  return data.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+  });
+};
+
+export default function Home({
+  usuario = null,
+  onLogout,
+  onAbrirBusca,
+  onAbrirDiario,
+  onAbrirPerfil,
+  onAdicionar,
+}) {
   const [filmes, setFilmes] = useState([]);
   const [series, setSeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  const [tvdPoster, setTvdPoster] = useState(null);
-  const [screamPoster, setScreamPoster] = useState(null);
-  const [severancePoster, setSeverancePoster] = useState(null);
-  
-  const scrollY = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [abaAtiva, setAbaAtiva] = useState('Home');
+
+  const fade = useRef(new Animated.Value(0)).current;
+
+  const nome = nomeUsuario(usuario);
+
+  const avatarUrl =
+    usuario?.avatar_url ||
+    usuario?.avatar ||
+    usuario?.foto ||
+    null;
+
+  const stats = usuario?.stats || usuario?.estatisticas || {};
+
+  const registros = Array.isArray(usuario?.registros)
+    ? usuario.registros
+    : [];
+
+  const atividades = Array.isArray(usuario?.atividades)
+    ? usuario.atividades
+    : [];
+
+  const conexoes = Array.isArray(usuario?.conexoes)
+    ? usuario.conexoes
+    : [];
+
+  const totalFilmes = Number(
+    stats.filmes_assistidos ?? stats.filmes ?? 0
+  );
+
+  const totalSeries = Number(
+    stats.series_em_andamento ?? stats.series ?? 0
+  );
+
+  const totalHoras = Number(
+    stats.horas_assistidas ?? stats.horas ?? 0
+  );
+
+  const carregarCatalogo = useCallback(async () => {
+    try {
+      const [f, s] = await Promise.all([
+        getFilmesEmAlta(),
+        getSeriesEmAlta(),
+      ]);
+
+      setFilmes(
+        Array.isArray(f?.results)
+          ? f.results.slice(0, 10)
+          : []
+      );
+
+      setSeries(
+        Array.isArray(s?.results)
+          ? s.results.slice(0, 10)
+          : []
+      );
+    } catch (e) {
+      console.warn('Não foi possível carregar o catálogo:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
+    Animated.timing(fade, {
       toValue: 1,
-      duration: 800,
-      easing: Easing.out(Easing.cubic),
+      duration: 650,
       useNativeDriver: true,
     }).start();
-  }, []);
 
-  const buscarPostersEspecificos = useCallback(async () => {
-    try {
-      const tvdResponse = await fetch(`${TMDB_BASE_URL}/search/tv?query=The%20Vampire%20Diaries&api_key=${TMDB_API_KEY}&language=pt-BR`);
-      const tvdData = await tvdResponse.json();
-      if (tvdData.results && tvdData.results.length > 0) setTvdPoster(tvdData.results[0].poster_path);
+    carregarCatalogo();
+  }, [carregarCatalogo, fade]);
 
-      const screamResponse = await fetch(`${TMDB_BASE_URL}/search/movie?query=Scream%206&api_key=${TMDB_API_KEY}&language=pt-BR`);
-      const screamData = await screamResponse.json();
-      if (screamData.results && screamData.results.length > 0) setScreamPoster(screamData.results[0].poster_path);
+  const atualizar = useCallback(() => {
+    setRefreshing(true);
+    carregarCatalogo();
+  }, [carregarCatalogo]);
 
-      const severanceResponse = await fetch(`${TMDB_BASE_URL}/search/tv?query=Severance&api_key=${TMDB_API_KEY}&language=pt-BR`);
-      const severanceData = await severanceResponse.json();
-      if (severanceData.results && severanceData.results.length > 0) setSeverancePoster(severanceData.results[0].poster_path);
-    } catch (error) {
-      console.error('Erro ao buscar posters específicos:', error);
+  const abrirAba = (aba, callback) => {
+    setAbaAtiva(aba);
+
+    if (callback) {
+      callback();
+    } else if (aba !== 'Home') {
+      Alert.alert(
+        aba,
+        'Esta área será conectada à tela correspondente na próxima etapa do desenvolvimento.'
+      );
     }
-  }, []);
+  };
 
-  const carregarDadosApi = useCallback(async () => {
-    try {
-      const [respostaFilmes, respostaSeries] = await Promise.all([getFilmesEmAlta(), getSeriesEmAlta()]);
-      setFilmes((respostaFilmes?.results || []).slice(0, 10));
-      setSeries((respostaSeries?.results || []).slice(0, 10));
-      await buscarPostersEspecificos();
-    } catch (error) { 
-      console.error('Erro API:', error); 
-    } finally { 
-      setLoading(false); 
-      setRefreshing(false); 
-    }
-  }, [buscarPostersEspecificos]);
-
-  useEffect(() => { carregarDadosApi(); }, [carregarDadosApi]);
-
-  const onRefresh = useCallback(() => { 
-    setRefreshing(true); 
-    carregarDadosApi(); 
-  }, [carregarDadosApi]);
-
-  const StarRating = ({ rating, size = 11, color = COLORS.accent }) => (
-    <View style={styles.starsRow}>
-      {[1, 2, 3, 4, 5].map((s) => (
-        <AntDesign key={s} name="star" size={size} color={s <= Math.round(rating / 2) ? color : '#262626'} />
-      ))}
+  const renderTituloSecao = titulo => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionTitle}>{titulo}</Text>
+      <View style={styles.sectionRule} />
     </View>
   );
 
-  const MediaCard = ({ item, index, isMovie }) => {
-    const title = isMovie ? (item.title || item.original_title) : (item.name || item.original_name);
-    const cardOpacity = useRef(new Animated.Value(0)).current;
-    
-    useEffect(() => {
-      Animated.timing(cardOpacity, {
-        toValue: 1,
-        duration: 500,
-        delay: index * 100,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }).start();
-    }, []);
+  const renderMidias = (lista, tipo) => {
+    if (loading) {
+      return (
+        <ActivityIndicator
+          color={COLORS.blue}
+          style={{ marginVertical: 28 }}
+        />
+      );
+    }
+
+    if (!lista.length) {
+      return (
+        <Text style={styles.emptyText}>
+          Não foi possível carregar o catálogo.
+        </Text>
+      );
+    }
 
     return (
-      <Animated.View style={[styles.mediaCardWrapper, { opacity: cardOpacity }]}>
-        <TouchableOpacity style={styles.mediaCard} activeOpacity={0.85}>
-          <View style={styles.posterContainer}>
-            {item.poster_path ? (
-              <>
-                <Image source={{ uri: `https://image.tmdb.org/t/p/w342${item.poster_path}` }} style={styles.posterImage} resizeMode="cover" />
-                <View style={styles.posterOverlay} />
-              </>
-            ) : (
-              <View style={styles.posterPlaceholder}>
-                <Ionicons name={isMovie ? "film" : "tv"} size={28} color={COLORS.textTertiary} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.horizontalList}
+      >
+        {lista.map((item, index) => {
+          const titulo =
+            tipo === 'filme'
+              ? item.title || item.original_title
+              : item.name || item.original_name;
+
+          return (
+            <TouchableOpacity
+              key={`${tipo}-${item.id}`}
+              activeOpacity={0.85}
+              style={styles.mediaCard}
+            >
+              {item.poster_path ? (
+                <Image
+                  source={{
+                    uri: `${TMDB_IMAGE}${item.poster_path}`,
+                  }}
+                  style={styles.poster}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.poster,
+                    styles.posterPlaceholder,
+                  ]}
+                >
+                  <Ionicons
+                    name={tipo === 'filme' ? 'film' : 'tv'}
+                    size={30}
+                    color={COLORS.muted}
+                  />
+                </View>
+              )}
+
+              <Text
+                numberOfLines={1}
+                style={styles.mediaTitle}
+              >
+                {titulo || 'Sem título'}
+              </Text>
+
+              <View style={styles.ratingRow}>
+                <AntDesign
+                  name="star"
+                  size={11}
+                  color={COLORS.yellow}
+                />
+                <Text style={styles.rating}>
+                  {Number(item.vote_average || 0).toFixed(1)}
+                </Text>
               </View>
-            )}
-            <View style={styles.rankBadge}>
-              <Text style={styles.rankNumber}>{index + 1}</Text>
-            </View>
-          </View>
-          <Text numberOfLines={1} style={styles.mediaTitle}>{title}</Text>
-          <View style={styles.mediaMeta}>
-            <View style={styles.ratingContainer}>
-              <AntDesign name="star" size={10} color={COLORS.accent} />
-              <Text style={styles.ratingText}>{item.vote_average ? item.vote_average.toFixed(1) : 'N/A'}</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
+
+              <View style={styles.rank}>
+                <Text style={styles.rankText}>
+                  {index + 1}
+                </Text>
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     );
   };
 
-  const SectionWithTitle = ({ title }) => (
-    <View style={styles.sectionTitleContainer}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <View style={styles.sectionLine} />
-    </View>
-  );
+  const renderRegistro = (item, index) => {
+    const titulo =
+      item.titulo ||
+      item.title ||
+      item.media_title ||
+      'Obra sem título';
+
+    const poster =
+      item.poster_url ||
+      item.poster ||
+      item.poster_path;
+
+    const imagem = poster
+      ? String(poster).startsWith('http')
+        ? poster
+        : `${TMDB_IMAGE}${poster}`
+      : null;
+
+    const nota = item.nota ?? item.rating;
+
+    return (
+      <View
+        key={item.id || `${titulo}-${index}`}
+        style={styles.recordCard}
+      >
+        {imagem ? (
+          <Image
+            source={{ uri: imagem }}
+            style={styles.recordPoster}
+          />
+        ) : (
+          <View
+            style={[
+              styles.recordPoster,
+              styles.posterPlaceholder,
+            ]}
+          >
+            <Ionicons
+              name="film-outline"
+              size={25}
+              color={COLORS.muted}
+            />
+          </View>
+        )}
+
+        <View style={styles.recordInfo}>
+          <Text
+            style={styles.recordTitle}
+            numberOfLines={1}
+          >
+            {titulo}
+          </Text>
+
+          <Text style={styles.recordDate}>
+            {formatarData(
+              item.created_at ||
+              item.data ||
+              item.watched_at
+            )}
+          </Text>
+
+          {nota !== undefined && nota !== null ? (
+            <Text style={styles.recordRating}>
+              ★ {nota}/5
+            </Text>
+          ) : (
+            <Text style={styles.recordDescription}>
+              Registro no diário
+            </Text>
+          )}
+
+          {!!(
+            item.review ||
+            item.comentario ||
+            item.comment
+          ) && (
+            <Text
+              style={styles.recordReview}
+              numberOfLines={2}
+            >
+              {item.review ||
+                item.comentario ||
+                item.comment}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} translucent />
-      
-      <View style={styles.headerFixed}>
-        <LinearGradient colors={['rgba(0,0,0,0.95)', 'rgba(0,0,0,0.8)']} style={styles.headerGradient}>
-          <View style={styles.headerContent}>
-            <TouchableOpacity style={styles.backButton} onPress={onLogout} activeOpacity={0.7}>
-              <Ionicons name="arrow-back" size={22} color={COLORS.text} />
-            </TouchableOpacity>
-            <View style={styles.logoContainer}>
-              <Feather name="film" size={20} color={COLORS.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.logoText}>Cine<Text style={{ color: COLORS.primary }}>Track</Text></Text>
-            </View>
-            <View style={styles.headerActions}>
-              <TouchableOpacity style={styles.iconButton} activeOpacity={0.7}>
-                <Feather name="bell" size={18} color={COLORS.text} />
-                <View style={styles.badge}><Text style={styles.badgeText}>3</Text></View>
-              </TouchableOpacity>
-              <View style={styles.avatar}><Text style={styles.avatarText}>G</Text></View>
-            </View>
+      <StatusBar
+        barStyle="light-content"
+        backgroundColor={COLORS.bg}
+        translucent={false}
+      />
+
+      {/* CABEÇALHO DA MARCA */}
+
+      <View style={styles.header}>
+        <View style={styles.brandContainer}>
+          <View style={styles.logoContainer}>
+            <Image
+              source={LOGO_CINETRACK}
+              style={styles.headerLogo}
+              resizeMode="contain"
+              accessibilityLabel="Logo CineTrack"
+            />
           </View>
-        </LinearGradient>
+
+          <View style={styles.brandTextContainer}>
+            <Text style={styles.brandName}>
+              CINE<Text style={styles.brandNameBlue}>TRACK</Text>
+            </Text>
+
+            <Text style={styles.brandSubtitle}>
+              SEU UNIVERSO AUDIOVISUAL
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.iconButton}
+            onPress={() =>
+              Alert.alert(
+                'Notificações',
+                'Você não tem notificações novas.'
+              )
+            }
+            accessibilityLabel="Notificações"
+          >
+            <Feather
+              name="bell"
+              size={19}
+              color={COLORS.text}
+            />
+            <View style={styles.notificationDot} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.avatarSmall}
+            onPress={() =>
+              abrirAba('Perfil', onAbrirPerfil)
+            }
+          >
+            {avatarUrl ? (
+              <Image
+                source={{ uri: avatarUrl }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Text style={styles.avatarInitial}>
+                {iniciais(nome)}
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <ScrollView 
+      <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={atualizar}
+            tintColor={COLORS.blue}
+          />
+        }
+        style={{ opacity: fade }}
       >
-        <SectionWithTitle title="CONTINUAR ASSISTINDO" />
-        <Animated.View style={[styles.heroSection, { opacity: fadeAnim }]}>
-          <View style={styles.heroCardLandscape}>
-            {tvdPoster ? (
-              <Image source={{ uri: `https://image.tmdb.org/t/p/w780${tvdPoster}` }} style={styles.heroImageLandscape} resizeMode="cover" />
-            ) : (
-              <View style={[styles.heroImageLandscape, styles.heroPlaceholder]}>
-                <MaterialCommunityIcons name="television" size={60} color={COLORS.textTertiary} />
-              </View>
-            )}
-            <LinearGradient colors={['rgba(0,0,0,0.3)', 'rgba(0,0,0,0.7)', 'rgba(0,0,0,0.95)']} style={styles.heroGradientLandscape} start={{x: 0, y: 0}} end={{x: 1, y: 1}} />
-            
-            <View style={styles.heroContentLandscape}>
-              <View style={styles.heroStarsRow}>
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <AntDesign key={s} name="star" size={16} color={COLORS.primary} style={{ marginRight: 4, textShadowColor: 'rgba(59, 130, 246, 0.8)', textShadowOffset: { width: 0, height: 0 }, textShadowRadius: 10 }} />
-                ))}
-              </View>
-              <View style={styles.heroBadgesRow}>
-                <View style={styles.heroBadgePill}>
-                  <MaterialCommunityIcons name="television" size={10} color="#fff" />
-                  <Text style={styles.heroBadgePillText}>SÉRIE</Text>
-                  <Text style={styles.heroBadgePillDot}>•</Text>
-                  <Text style={styles.heroBadgePillText}>THE CW</Text>
-                </View>
-              </View>
-              <Text style={styles.heroTitleLandscape}>The Vampire Diaries</Text>
-              <Text style={styles.heroMetaLandscape}>T04 · E12 · A View to a Kill · 42 min</Text>
-              <View style={styles.heroProgressRow}>
-                <View style={styles.progressBarLandscape}><View style={[styles.progressFillLandscape, { width: '62%' }]} /></View>
-                <Text style={styles.progressTextLandscape}>62% assistido</Text>
-              </View>
-            </View>
-            <TouchableOpacity style={styles.playButtonCircle} activeOpacity={0.85}>
-              <Ionicons name="play" size={24} color="#fff" style={{ marginLeft: 2 }} />
-            </TouchableOpacity>
-          </View>
-        </Animated.View>
+        <View style={styles.welcome}>
+          <Text style={styles.eyebrow}>
+            SEU UNIVERSO AUDIOVISUAL
+          </Text>
 
-        <SectionWithTitle title="MEU DIÁRIO" />
+          <Text style={styles.greeting}>
+            Olá,{' '}
+            <Text style={styles.greetingName}>
+              {nome}
+            </Text>
+          </Text>
+
+          <Text style={styles.welcomeSub}>
+            Continue explorando suas histórias favoritas.
+          </Text>
+        </View>
+
+        {renderTituloSecao('CONTINUAR ASSISTINDO')}
+
+        <View style={styles.heroCard}>
+          <LinearGradient
+            colors={['#17113B', '#0D1424', '#0B0D12']}
+            style={StyleSheet.absoluteFillObject}
+          />
+
+          <View style={styles.heroTop}>
+            <View style={styles.heroStars}>
+              {[1, 2, 3, 4, 5].map(n => (
+                <AntDesign
+                  key={n}
+                  name="star"
+                  size={13}
+                  color={
+                    n < 5
+                      ? COLORS.blueLight
+                      : '#35405A'
+                  }
+                />
+              ))}
+            </View>
+
+            <View style={styles.heroBadge}>
+              <Text style={styles.heroBadgeText}>
+                SEU DIÁRIO
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.heroTitle}>
+            Seu próximo episódio começa aqui.
+          </Text>
+
+          <Text style={styles.heroSub}>
+            Adicione filmes e séries ao seu diário para acompanhar seu progresso.
+          </Text>
+
+          <TouchableOpacity
+            style={styles.heroAction}
+            onPress={() =>
+              abrirAba('Adicionar', onAdicionar)
+            }
+          >
+            <Ionicons
+              name="play"
+              size={19}
+              color="#fff"
+            />
+          </TouchableOpacity>
+        </View>
+
+        {renderTituloSecao('MEU DIÁRIO')}
+
         <View style={styles.statsGrid}>
           {[
-            { num: '47', label: 'filmes', sub: 'assistidos', color: COLORS.primary, icon: 'film' },
-            { num: '12', label: 'séries', sub: 'em andamento', color: COLORS.success, icon: 'tv' },
-            { num: '139', label: 'horas', sub: 'em tela', color: COLORS.pink, icon: 'clock' },
-          ].map((stat, idx) => (
-            <View key={idx} style={styles.statCard}>
-              <View style={styles.statContent}>
-                <Feather name={stat.icon} size={18} color={stat.color} style={{ marginBottom: 12 }} />
-                <Text style={styles.statNumber}>{stat.num}</Text>
-                <Text style={styles.statLabel}>{stat.label}</Text>
-                <Text style={styles.statSub}>{stat.sub}</Text>
-              </View>
-              <View style={[styles.statAccent, { backgroundColor: stat.color }]} />
+            {
+              value: totalFilmes,
+              label: 'filmes',
+              sub: 'assistidos',
+              color: COLORS.blue,
+              icon: 'film',
+            },
+            {
+              value: totalSeries,
+              label: 'séries',
+              sub: 'em andamento',
+              color: COLORS.green,
+              icon: 'tv',
+            },
+            {
+              value: totalHoras,
+              label: 'horas',
+              sub: 'em tela',
+              color: COLORS.pink,
+              icon: 'clock',
+            },
+          ].map((stat, i) => (
+            <View
+              key={i}
+              style={styles.statCard}
+            >
+              <Feather
+                name={stat.icon}
+                size={17}
+                color={stat.color}
+              />
+
+              <Text style={styles.statNumber}>
+                {stat.value}
+              </Text>
+
+              <Text style={styles.statLabel}>
+                {stat.label}
+              </Text>
+
+              <Text style={styles.statSub}>
+                {stat.sub}
+              </Text>
+
+              <View
+                style={[
+                  styles.statLine,
+                  { backgroundColor: stat.color },
+                ]}
+              />
             </View>
           ))}
         </View>
 
-        <SectionWithTitle title="FILMES EM ALTA" />
-        {loading ? (
-          <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 40 }} />
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {filmes.map((item, index) => <MediaCard key={`m-${item.id}`} item={item} index={index} isMovie={true} />)}
-          </ScrollView>
-        )}
+        {renderTituloSecao('FILMES EM ALTA')}
+        {renderMidias(filmes, 'filme')}
 
-        <SectionWithTitle title="SÉRIES EM ALTA" />
-        {loading ? (
-          <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 40 }} />
-        ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
-            {series.map((item, index) => <MediaCard key={`s-${item.id}`} item={item} index={index} isMovie={false} />)}
-          </ScrollView>
-        )}
+        {renderTituloSecao('SÉRIES EM ALTA')}
+        {renderMidias(series, 'serie')}
 
-        {/* ✅ CONEXÕES COM AVATARES FUNCIONAIS (DiceBear API corrigida) */}
-        <SectionWithTitle title="CONEXÕES" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.friendsScroll}>
-          {[
-            { name: 'Lucas', online: true },
-            { name: 'Ana', online: false },
-            { name: 'Pedro', online: true },
-            { name: 'Beatriz', online: false },
-            { name: 'Mariana', online: true },
-          ].map((friend, idx) => (
-            <View key={idx} style={styles.friendItem}>
-              <View style={styles.friendAvatarContainer}>
-                <Image 
-                  source={{ 
-                    uri: `https://api.dicebear.com/7.x/avataaars/svg?seed=${friend.name}` 
-                  }} 
-                  style={styles.friendAvatarImage}
-                />
-                {friend.online && <View style={styles.onlineIndicator} />}
-              </View>
-              <Text style={styles.friendName} numberOfLines={1}>{friend.name}</Text>
-            </View>
-          ))}
-          <TouchableOpacity style={styles.addFriend} activeOpacity={0.7}>
-            <View style={styles.addFriendAvatar}>
-              <Feather name="user-plus" size={20} color={COLORS.textTertiary} />
-            </View>
-            <Text style={styles.addFriendText}>ver todos</Text>
-          </TouchableOpacity>
-        </ScrollView>
+        {renderTituloSecao('CONEXÕES')}
 
-        <SectionWithTitle title="ATIVIDADE RECENTE" />
-        <View style={styles.feedCard}>
-          <View style={styles.feedHeader}>
-            <View style={[styles.feedAvatar, { backgroundColor: COLORS.primary }]}><Text style={styles.feedAvatarText}>L</Text></View>
-            <View style={styles.feedInfo}>
-              <Text style={styles.feedText}><Text style={styles.feedBold}>Lucas</Text> avaliou <Text style={styles.feedBold}>Scream VI</Text></Text>
-              <Text style={styles.feedTime}>há 2 horas</Text>
-            </View>
-          </View>
-          <View style={styles.feedContent}>
-            {screamPoster ? (
-              <Image source={{ uri: `https://image.tmdb.org/t/p/w200${screamPoster}` }} style={styles.feedPoster} resizeMode="cover" />
-            ) : (
-              <View style={[styles.feedPoster, styles.feedPosterPlaceholder]}><Ionicons name="film" size={30} color={COLORS.textTertiary} /></View>
-            )}
-            <View style={styles.feedDetails}>
-              <Text style={styles.feedMovieTitle}>Scream VI</Text>
-              <StarRating rating={5} size={12} />
-              <Text style={styles.feedReview}>"A melhor franquia da década. Gostei muito da evolução da personagem."</Text>
-            </View>
-          </View>
-        </View>
+        {conexoes.length ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.horizontalList}
+          >
+            {conexoes.map((pessoa, i) => {
+              const n =
+                pessoa.username ||
+                pessoa.nome ||
+                pessoa.name ||
+                'Usuário';
 
-        <View style={styles.feedCard}>
-          <View style={styles.feedHeader}>
-            <View style={[styles.feedAvatar, { backgroundColor: COLORS.purple }]}><Text style={styles.feedAvatarText}>P</Text></View>
-            <View style={styles.feedInfo}>
-              <Text style={styles.feedText}><Text style={styles.feedBold}>Pedro</Text> está assistindo <Text style={styles.feedBold}>Severance</Text></Text>
-              <View style={styles.liveIndicator}><View style={styles.liveDot} /><Text style={styles.liveText}>AO VIVO</Text></View>
-            </View>
-          </View>
-          <View style={styles.feedContent}>
-            {severancePoster ? (
-              <Image source={{ uri: `https://image.tmdb.org/t/p/w200${severancePoster}` }} style={styles.feedPoster} resizeMode="cover" />
-            ) : (
-              <View style={[styles.feedPoster, styles.feedPosterPlaceholder]}><MaterialCommunityIcons name="television" size={30} color={COLORS.textTertiary} /></View>
-            )}
-            <View style={styles.feedDetails}>
-              <Text style={styles.feedMovieTitle}>Severance</Text>
-              <Text style={styles.feedEpisode}>T02 · E03 · Who Is Alive?</Text>
-            </View>
-          </View>
-        </View>
+              const foto =
+                pessoa.avatar_url ||
+                pessoa.avatar;
 
-        <SectionWithTitle title="SEUS REGISTROS" />
-        {filmes.slice(0, 3).map((log, idx) => (
-          <View key={idx} style={styles.logCardPremium}>
-            <View style={styles.logHeaderPremium}>
-              {log.poster_path ? (
-                <Image source={{ uri: `https://image.tmdb.org/t/p/w200${log.poster_path}` }} style={styles.logPosterPremium} resizeMode="cover" />
-              ) : (
-                <View style={[styles.logPosterPremium, styles.logPosterPlaceholder]}><Ionicons name="film" size={40} color={COLORS.textTertiary} /></View>
-              )}
-              <View style={styles.logInfoPremium}>
-                <View style={styles.logTitleRow}>
-                  <Text style={styles.logTitlePremium} numberOfLines={1}>{log.title || log.original_title}</Text>
-                  <View style={styles.logRatingBadge}>
-                    <AntDesign name="star" size={10} color={COLORS.accent} />
-                    <Text style={styles.logRatingText}>{log.vote_average.toFixed(1)}</Text>
+              return (
+                <TouchableOpacity
+                  key={pessoa.id || i}
+                  style={styles.friend}
+                >
+                  <View style={styles.friendAvatar}>
+                    {foto ? (
+                      <Image
+                        source={{ uri: foto }}
+                        style={styles.avatarImage}
+                      />
+                    ) : (
+                      <Text style={styles.friendInitial}>
+                        {iniciais(n)}
+                      </Text>
+                    )}
                   </View>
-                </View>
-                <Text style={styles.logDatePremium}>Hoje</Text>
-                <StarRating rating={Math.round(log.vote_average / 2)} size={11} />
-                <View style={styles.logTagsPremium}>
-                  <View style={styles.logTagPremium}><Text style={styles.logTagTextPremium}>Filme</Text></View>
-                </View>
+
+                  <Text
+                    style={styles.friendName}
+                    numberOfLines={1}
+                  >
+                    {n}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        ) : (
+          <Text style={styles.emptyText}>
+            Suas conexões aparecerão aqui quando você começar a seguir pessoas.
+          </Text>
+        )}
+
+        {renderTituloSecao('ATIVIDADE RECENTE')}
+
+        {atividades.length ? (
+          atividades.slice(0, 5).map((item, i) => (
+            <View
+              key={item.id || i}
+              style={styles.activityCard}
+            >
+              <View style={styles.activityIcon}>
+                <Feather
+                  name="activity"
+                  size={17}
+                  color={COLORS.blueLight}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.activityText}>
+                  {item.descricao ||
+                    item.texto ||
+                    item.action ||
+                    'Nova atividade'}
+                </Text>
+
+                <Text style={styles.recordDate}>
+                  {formatarData(
+                    item.created_at || item.data
+                  )}
+                </Text>
               </View>
             </View>
-            <View style={styles.logCommentPremium}>
-              <Text style={styles.logCommentTextPremium}>{log.overview ? log.overview.substring(0, 120) + '...' : 'Adicionado ao diário.'}</Text>
-            </View>
-            <View style={styles.logActionsPremium}>
-              <TouchableOpacity style={styles.logActionPremium}><Ionicons name="heart-outline" size={16} color={COLORS.textTertiary} /><Text style={styles.logActionTextPremium}>{Math.floor(Math.random() * 50)}</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.logActionPremium}><Feather name="message-circle" size={16} color={COLORS.textTertiary} /><Text style={styles.logActionTextPremium}>{Math.floor(Math.random() * 10)}</Text></TouchableOpacity>
-              <TouchableOpacity style={styles.logActionPremium}><Feather name="share-2" size={16} color={COLORS.textTertiary} /></TouchableOpacity>
-            </View>
-          </View>
-        ))}
+          ))
+        ) : (
+          <Text style={styles.emptyText}>
+            Ainda não há atividades para mostrar.
+          </Text>
+        )}
 
-        <View style={{ height: 120 }} />
-      </ScrollView>
+        {renderTituloSecao('ÚLTIMOS REGISTROS')}
+
+        {registros.length ? (
+          registros.slice(0, 5).map(renderRegistro)
+        ) : (
+          <View style={styles.emptyCard}>
+            <Feather
+              name="book-open"
+              size={25}
+              color={COLORS.muted}
+            />
+
+            <Text style={styles.emptyTitle}>
+              Seu diário está esperando por você
+            </Text>
+
+            <Text style={styles.emptyText}>
+              Quando você registrar um filme ou série, ele aparecerá aqui.
+            </Text>
+          </View>
+        )}
+
+        <View style={{ height: 112 }} />
+      </Animated.ScrollView>
+
+      {/* NAVEGAÇÃO INFERIOR */}
 
       <View style={styles.tabBar}>
-        <LinearGradient colors={['rgba(10,10,10,0.98)', 'rgba(0,0,0,0.98)']} style={styles.tabGradient}>
-          <TouchableOpacity style={styles.tabItem} activeOpacity={0.7}>
-            <Ionicons name="home" size={24} color={COLORS.primary} />
-            <Text style={[styles.tabLabel, { color: COLORS.primary }]}>Home</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} activeOpacity={0.7}>
-            <Feather name="search" size={22} color={COLORS.textTertiary} />
-            <Text style={styles.tabLabel}>Buscar</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addButton} activeOpacity={0.85}>
-            <LinearGradient colors={['#3b82f6', '#2563eb']} style={styles.addButtonGradient} start={{x: 0, y: 0}} end={{x: 1, y: 1}}>
-              <Feather name="plus" size={26} color="#fff" />
-            </LinearGradient>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="notebook-outline" size={24} color={COLORS.textTertiary} />
-            <Text style={styles.tabLabel}>Diário</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.tabItem} activeOpacity={0.7} onPress={onLogout}>
-            <Feather name="user" size={22} color={COLORS.textTertiary} />
-            <Text style={styles.tabLabel}>Perfil</Text>
-          </TouchableOpacity>
-        </LinearGradient>
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() => abrirAba('Home')}
+        >
+          <Ionicons
+            name="home"
+            size={22}
+            color={
+              abaAtiva === 'Home'
+                ? COLORS.blueLight
+                : COLORS.muted
+            }
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              abaAtiva === 'Home' && styles.tabActive,
+            ]}
+          >
+            Home
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            abrirAba('Buscar', onAbrirBusca)
+          }
+        >
+          <Feather
+            name="search"
+            size={21}
+            color={
+              abaAtiva === 'Buscar'
+                ? COLORS.blueLight
+                : COLORS.muted
+            }
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              abaAtiva === 'Buscar' && styles.tabActive,
+            ]}
+          >
+            Buscar
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() =>
+            abrirAba('Adicionar', onAdicionar)
+          }
+        >
+          <LinearGradient
+            colors={['#3984FF', '#2563EB']}
+            style={styles.addButtonGradient}
+          >
+            <Feather
+              name="plus"
+              size={26}
+              color="#fff"
+            />
+          </LinearGradient>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            abrirAba('Diário', onAbrirDiario)
+          }
+        >
+          <MaterialCommunityIcons
+            name="notebook-outline"
+            size={23}
+            color={
+              abaAtiva === 'Diário'
+                ? COLORS.blueLight
+                : COLORS.muted
+            }
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              abaAtiva === 'Diário' && styles.tabActive,
+            ]}
+          >
+            Diário
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          onPress={() =>
+            abrirAba('Perfil', onAbrirPerfil || onLogout)
+          }
+        >
+          <Feather
+            name="user"
+            size={21}
+            color={
+              abaAtiva === 'Perfil'
+                ? COLORS.blueLight
+                : COLORS.muted
+            }
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              abaAtiva === 'Perfil' && styles.tabActive,
+            ]}
+          >
+            Perfil
+          </Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.bg },
-  headerFixed: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100 },
-  headerGradient: { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight + 10 : 10, paddingBottom: 15 },
-  headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24 },
-  backButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center' },
-  logoContainer: { flexDirection: 'row', alignItems: 'center' },
-  logoText: { fontSize: 22, fontWeight: '800', color: COLORS.text, letterSpacing: -0.5 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  iconButton: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.08)', justifyContent: 'center', alignItems: 'center', position: 'relative' },
-  badge: { position: 'absolute', top: 6, right: 6, width: 16, height: 16, borderRadius: 8, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: COLORS.surface },
-  badgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
-  avatar: { width: 40, height: 40, borderRadius: 12, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  avatarText: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+    paddingTop:
+      Platform.OS === 'android'
+        ? StatusBar.currentHeight || 24
+        : 0,
+  },
 
-  scrollContent: { paddingHorizontal: 24, paddingTop: 90 },
-  sectionTitleContainer: { marginTop: 32, marginBottom: 16 },
-  sectionTitle: { color: COLORS.textSecondary, fontSize: 12, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8 },
-  sectionLine: { height: 1, backgroundColor: COLORS.border },
-  
-  heroSection: { marginTop: 10 },
-  heroCardLandscape: { width: '100%', height: 220, borderRadius: 20, overflow: 'hidden', position: 'relative', borderWidth: 1, borderColor: COLORS.borderSubtle },
-  heroImageLandscape: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
-  heroPlaceholder: { backgroundColor: COLORS.surfaceHigh, justifyContent: 'center', alignItems: 'center' },
-  heroGradientLandscape: { ...StyleSheet.absoluteFillObject },
-  heroContentLandscape: { position: 'absolute', bottom: 0, left: 0, right: 70, padding: 18, paddingBottom: 18 },
-  heroStarsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  heroBadgesRow: { marginBottom: 8 },
-  heroBadgePill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(59, 130, 246, 0.25)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, alignSelf: 'flex-start', borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.4)', gap: 6 },
-  heroBadgePillText: { color: '#fff', fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
-  heroBadgePillDot: { color: 'rgba(255,255,255,0.5)', fontSize: 10 },
-  heroTitleLandscape: { color: '#fff', fontSize: 26, fontWeight: '800', letterSpacing: -0.5, marginBottom: 4, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 2 }, textShadowRadius: 8 },
-  heroMetaLandscape: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 12, fontWeight: '500' },
-  heroProgressRow: { marginBottom: 4 },
-  progressBarLandscape: { height: 3, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 2, overflow: 'hidden', marginBottom: 6 },
-  progressFillLandscape: { height: '100%', backgroundColor: COLORS.primary, borderRadius: 2 },
-  progressTextLandscape: { color: COLORS.primaryLight, fontSize: 11, fontWeight: '600' },
-  playButtonCircle: { position: 'absolute', right: 18, bottom: 18, width: 52, height: 52, borderRadius: 26, backgroundColor: COLORS.primary, justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 12, elevation: 8 },
+  // CABEÇALHO REORGANIZADO
 
-  statsGrid: { flexDirection: 'row', gap: 12 },
-  statCard: { flex: 1, backgroundColor: COLORS.surfaceElevated, borderRadius: 20, padding: 20, position: 'relative', overflow: 'hidden', borderWidth: 1, borderColor: COLORS.borderSubtle },
-  statContent: { position: 'relative', zIndex: 2 },
-  statNumber: { color: '#fff', fontSize: 32, fontWeight: '800', marginBottom: 4 },
-  statLabel: { color: COLORS.textPrimary, fontSize: 13, fontWeight: '600', marginBottom: 2 },
-  statSub: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '400' },
-  statAccent: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 3 },
+  header: {
+    minHeight: 76,
+    paddingHorizontal: 19,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.bg,
+    zIndex: 2,
+  },
 
-  horizontalScroll: { gap: 12 },
-  mediaCardWrapper: { width: CARD_WIDTH },
-  mediaCard: { backgroundColor: COLORS.surfaceElevated, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.borderSubtle },
-  posterContainer: { width: '100%', aspectRatio: 2/3, position: 'relative', overflow: 'hidden' },
-  posterImage: { width: '100%', height: '100%' },
-  posterOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.2)' },
-  posterPlaceholder: { width: '100%', height: '100%', backgroundColor: COLORS.surfaceHigh, justifyContent: 'center', alignItems: 'center' },
-  rankBadge: { position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  rankNumber: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  mediaTitle: { color: '#fff', fontSize: 14, fontWeight: '600', paddingHorizontal: 14, paddingVertical: 12 },
-  mediaMeta: { paddingHorizontal: 14, paddingBottom: 14 },
-  ratingContainer: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  ratingText: { color: COLORS.accent, fontSize: 12, fontWeight: '600' },
+  brandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
 
-  // ✅ ESTILOS DE CONEXÕES CORRIGIDOS E SEM DUPLICATAS
-  friendsScroll: { flexDirection: 'row', gap: 16, marginTop: 4 },
-  friendItem: { alignItems: 'center', width: 72 },
-  friendAvatarContainer: { position: 'relative', marginBottom: 8 },
-  friendAvatarImage: { 
-    width: 56, 
-    height: 56, 
-    borderRadius: 28,
-    backgroundColor: COLORS.surfaceHigh,
+  logoContainer: {
+    width: 47,
+    height: 47,
+    borderRadius: 14,
+    backgroundColor: '#101827',
     borderWidth: 1,
-    borderColor: COLORS.borderSubtle,
+    borderColor: 'rgba(96,165,250,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  onlineIndicator: { 
-    position: 'absolute', 
-    bottom: 2, 
-    right: 2, 
-    width: 12, 
-    height: 12, 
-    borderRadius: 6, 
-    backgroundColor: COLORS.success, 
-    borderWidth: 2.5, 
-    borderColor: COLORS.surface 
+
+  headerLogo: {
+    width: 39,
+    height: 39,
   },
-  friendName: { color: COLORS.textTertiary, fontSize: 11, fontWeight: '500', textAlign: 'center' },
-  addFriend: { alignItems: 'center', width: 72 },
-  addFriendAvatar: { width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.surfaceElevated, borderWidth: 1.5, borderColor: COLORS.border, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
-  addFriendText: { color: COLORS.textTertiary, fontSize: 10, fontWeight: '500' },
 
-  feedCard: { backgroundColor: COLORS.surfaceElevated, borderRadius: 20, padding: 18, marginTop: 12, borderWidth: 1, borderColor: COLORS.borderSubtle },
-  feedHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
-  feedAvatar: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
-  feedAvatarText: { color: '#fff', fontSize: 14, fontWeight: '800' },
-  feedInfo: { flex: 1 },
-  feedText: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 20 },
-  feedBold: { color: COLORS.textPrimary, fontWeight: '600' },
-  feedTime: { color: COLORS.textTertiary, fontSize: 12, marginTop: 2 },
-  liveIndicator: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(34, 197, 94, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start', marginTop: 4 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: COLORS.success, marginRight: 4 },
-  liveText: { color: COLORS.success, fontSize: 9, fontWeight: '800', letterSpacing: 0.5 },
-  feedContent: { flexDirection: 'row', gap: 14, marginTop: 12 },
-  feedPoster: { width: 60, height: 90, borderRadius: 12 },
-  feedPosterPlaceholder: { backgroundColor: COLORS.surfaceHigh, justifyContent: 'center', alignItems: 'center' },
-  feedDetails: { flex: 1, justifyContent: 'center' },
-  feedMovieTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 6 },
-  feedEpisode: { color: COLORS.textTertiary, fontSize: 13, marginBottom: 8 },
-  feedReview: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 20, fontStyle: 'italic', marginTop: 8 },
+  brandTextContainer: {
+    justifyContent: 'center',
+  },
 
-  logCardPremium: { backgroundColor: COLORS.surfaceElevated, borderRadius: 20, padding: 18, marginTop: 12, borderWidth: 1, borderColor: COLORS.borderSubtle },
-  logHeaderPremium: { flexDirection: 'row', marginBottom: 14 },
-  logPosterPremium: { width: 70, height: 105, borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 6 },
-  logPosterPlaceholder: { backgroundColor: COLORS.surfaceHigh, justifyContent: 'center', alignItems: 'center' },
-  logInfoPremium: { flex: 1, marginLeft: 14 },
-  logTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
-  logTitlePremium: { color: '#fff', fontSize: 16, fontWeight: '700', flex: 1, marginRight: 8 },
-  logRatingBadge: { flexDirection: 'row', backgroundColor: 'rgba(251, 191, 36, 0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, alignItems: 'center', gap: 4 },
-  logRatingText: { color: COLORS.accent, fontSize: 11, fontWeight: '700' },
-  logDatePremium: { color: COLORS.textTertiary, fontSize: 12, marginBottom: 8 },
-  logTagsPremium: { flexDirection: 'row', gap: 6, marginTop: 10 },
-  logTagPremium: { backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: COLORS.borderSubtle },
-  logTagTextPremium: { color: COLORS.textSecondary, fontSize: 11, fontWeight: '500' },
-  logCommentPremium: { backgroundColor: 'rgba(255,255,255,0.03)', borderRadius: 14, padding: 14, marginBottom: 12 },
-  logCommentTextPremium: { color: COLORS.textSecondary, fontSize: 13, lineHeight: 20, fontStyle: 'italic' },
-  logActionsPremium: { flexDirection: 'row', gap: 20, borderTopWidth: 1, borderTopColor: COLORS.borderSubtle, paddingTop: 12 },
-  logActionPremium: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  logActionTextPremium: { color: COLORS.textTertiary, fontSize: 12, fontWeight: '600' },
+  brandName: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
 
-  tabBar: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  tabGradient: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', paddingBottom: Platform.OS === 'ios' ? 24 : 10, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border },
-  tabItem: { alignItems: 'center', justifyContent: 'center', flex: 1, gap: 4 },
-  addButton: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center', top: -20, shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 10, borderWidth: 4, borderColor: COLORS.bg },
-  addButtonGradient: { width: '100%', height: '100%', borderRadius: 32, justifyContent: 'center', alignItems: 'center' },
-  tabLabel: { fontSize: 11, fontWeight: '600' },
-  starsRow: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  brandNameBlue: {
+    color: COLORS.blueLight,
+  },
+
+  brandSubtitle: {
+    color: '#718096',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 1.55,
+    marginTop: 4,
+  },
+
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 11,
+    marginLeft: 8,
+  },
+
+  iconButton: {
+    width: 41,
+    height: 41,
+    borderRadius: 13,
+    backgroundColor: COLORS.elevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+
+  notificationDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.blue,
+  },
+
+  avatarSmall: {
+    width: 41,
+    height: 41,
+    borderRadius: 13,
+    backgroundColor: COLORS.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 30,
+  },
+
+  avatarInitial: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+
+  scrollContent: {
+    paddingHorizontal: 19,
+    paddingTop: 20,
+    paddingBottom: 20,
+  },
+
+  welcome: {
+    marginBottom: 3,
+  },
+
+  eyebrow: {
+    color: COLORS.muted,
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+
+  greeting: {
+    color: COLORS.text,
+    fontSize: 27,
+    fontWeight: '800',
+    letterSpacing: -0.7,
+  },
+
+  greetingName: {
+    color: COLORS.blueLight,
+  },
+
+  welcomeSub: {
+    color: COLORS.secondary,
+    fontSize: 12,
+    marginTop: 5,
+  },
+
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 25,
+    marginBottom: 13,
+  },
+
+  sectionTitle: {
+    color: COLORS.muted,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.8,
+  },
+
+  sectionRule: {
+    flex: 1,
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+
+  heroCard: {
+    minHeight: 185,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    padding: 17,
+    overflow: 'hidden',
+    justifyContent: 'space-between',
+  },
+
+  heroTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  heroStars: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+
+  heroBadge: {
+    backgroundColor: 'rgba(59,130,246,0.18)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+
+  heroBadgeText: {
+    color: COLORS.blueLight,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+
+  heroTitle: {
+    color: '#fff',
+    fontSize: 21,
+    fontWeight: '800',
+    maxWidth: '82%',
+    marginTop: 19,
+  },
+
+  heroSub: {
+    color: COLORS.secondary,
+    fontSize: 12,
+    lineHeight: 18,
+    maxWidth: '82%',
+    marginTop: 5,
+  },
+
+  heroAction: {
+    position: 'absolute',
+    right: 17,
+    bottom: 18,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: COLORS.blue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+  },
+
+  statsGrid: {
+    flexDirection: 'row',
+    gap: 9,
+  },
+
+  statCard: {
+    flex: 1,
+    minHeight: 116,
+    padding: 12,
+    borderRadius: 16,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+
+  statNumber: {
+    color: '#fff',
+    fontSize: 25,
+    fontWeight: '900',
+    marginTop: 8,
+  },
+
+  statLabel: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+
+  statSub: {
+    color: COLORS.muted,
+    fontSize: 10,
+    marginTop: 2,
+  },
+
+  statLine: {
+    position: 'absolute',
+    bottom: 0,
+    left: 12,
+    width: 42,
+    height: 2,
+    borderRadius: 2,
+  },
+
+  horizontalList: {
+    gap: 12,
+    paddingRight: 5,
+  },
+
+  mediaCard: {
+    width: CARD_WIDTH,
+    borderRadius: 15,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+    paddingBottom: 10,
+  },
+
+  poster: {
+    width: '100%',
+    aspectRatio: 2 / 3,
+  },
+
+  posterPlaceholder: {
+    backgroundColor: COLORS.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  mediaTitle: {
+    color: COLORS.text,
+    fontSize: 11,
+    fontWeight: '700',
+    paddingHorizontal: 9,
+    paddingTop: 9,
+  },
+
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingTop: 5,
+  },
+
+  rating: {
+    color: COLORS.blueLight,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  rank: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    width: 23,
+    height: 23,
+    borderRadius: 7,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  rankText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+
+  emptyText: {
+    color: COLORS.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    marginVertical: 8,
+  },
+
+  friend: {
+    width: 62,
+    alignItems: 'center',
+  },
+
+  friendAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+  },
+
+  friendInitial: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  friendName: {
+    color: COLORS.secondary,
+    fontSize: 10,
+    maxWidth: 62,
+  },
+
+  activityCard: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    backgroundColor: COLORS.elevated,
+    padding: 13,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 9,
+  },
+
+  activityIcon: {
+    width: 35,
+    height: 35,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59,130,246,0.14)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  activityText: {
+    color: COLORS.text,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+
+  recordCard: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 12,
+    backgroundColor: COLORS.elevated,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 9,
+  },
+
+  recordPoster: {
+    width: 55,
+    height: 78,
+    borderRadius: 9,
+    backgroundColor: COLORS.surface,
+  },
+
+  recordInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+
+  recordTitle: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  recordDate: {
+    color: COLORS.muted,
+    fontSize: 10,
+    marginTop: 4,
+  },
+
+  recordRating: {
+    color: COLORS.yellow,
+    fontSize: 11,
+    marginTop: 5,
+    fontWeight: '700',
+  },
+
+  recordDescription: {
+    color: COLORS.secondary,
+    fontSize: 11,
+    marginTop: 5,
+  },
+
+  recordReview: {
+    color: COLORS.secondary,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 5,
+  },
+
+  emptyCard: {
+    alignItems: 'center',
+    padding: 22,
+    backgroundColor: COLORS.elevated,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 8,
+  },
+
+  emptyTitle: {
+    color: COLORS.text,
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+
+  tabBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    minHeight: 76,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    paddingTop: 9,
+    backgroundColor: 'rgba(8,10,14,0.98)',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+
+  tabLabel: {
+    color: COLORS.muted,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  tabActive: {
+    color: COLORS.blueLight,
+  },
+
+  addButton: {
+    width: 54,
+    height: 54,
+    borderRadius: 17,
+    top: -14,
+    overflow: 'hidden',
+    elevation: 8,
+  },
+
+  addButtonGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

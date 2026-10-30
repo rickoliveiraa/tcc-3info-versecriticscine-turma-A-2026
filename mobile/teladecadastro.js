@@ -22,14 +22,14 @@ import {
   MaterialCommunityIcons,
 } from '@expo/vector-icons';
 
-// Nova logo do CineTrack.
+// Logo do CineTrack
 // Arquivo esperado: assets/logo-cinetrack.png
 const LOGO_CINETRACK = require('./assets/logo-cinetrack.png');
 
-// Protótipo local: os dados ficam apenas na memória.
-// Para produção, conecte esta tela ao backend e use autenticação segura.
-let usuariosCadastrados = [];
-
+// Endereço da API PHP
+// Endereço da API PHP
+const API_CADASTRO =
+  'https://outlets-univ-dirt-shorts.trycloudflare.com/TCC/TCC/api/cadastro.php';
 export default function TelaCadastro({
   onVoltar,
   onEntrar,
@@ -94,7 +94,8 @@ export default function TelaCadastro({
     Alert.alert('Confira seus dados', mensagem);
   };
 
-  const handleCadastro = () => {
+  // CADASTRO INTEGRADO AO BACKEND PHP + SQLITE
+  const handleCadastro = async () => {
     Keyboard.dismiss();
     setSubmitted(true);
 
@@ -136,34 +137,37 @@ export default function TelaCadastro({
       );
     }
 
-    const existe = usuariosCadastrados.some(
-      user => user.email === emailNormalizado
-    );
+    try {
+      setLoading(true);
 
-    if (existe) {
-      return mostrarErro(
-        'Este e-mail já foi cadastrado neste protótipo.'
-      );
-    }
+      const resposta = await fetch(API_CADASTRO, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Accept: 'application/json',
+        },
+        body: new URLSearchParams({
+          nome: nome.trim(),
+          email: emailNormalizado,
+          senha: senha,
+        }).toString(),
+      });
 
-    setLoading(true);
+      const dados = await resposta.json();
 
-    const novoUsuario = {
-      id: `${Date.now()}`,
-      username: nome.trim(),
-      email: emailNormalizado,
+      if (!resposta.ok || !dados.sucesso) {
+        throw new Error(
+          dados.mensagem || 'Não foi possível criar sua conta.'
+        );
+      }
 
-      // Protótipo apenas. Não armazene senhas assim em produção.
-      password_hash: senha,
-
-      role: 'user',
-      created_at: new Date().toISOString(),
-    };
-
-    usuariosCadastrados.push(novoUsuario);
-
-    setTimeout(() => {
-      setLoading(false);
+      const novoUsuario = {
+        id: dados.id || `${Date.now()}`,
+        username: nome.trim(),
+        email: emailNormalizado,
+        role: 'user',
+        created_at: new Date().toISOString(),
+      };
 
       Alert.alert(
         'Conta criada!',
@@ -175,7 +179,16 @@ export default function TelaCadastro({
           },
         ]
       );
-    }, 500);
+
+    } catch (erro) {
+      Alert.alert(
+        'Erro no cadastro',
+        erro.message ||
+          'Não foi possível conectar ao servidor. Tente novamente.'
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const fieldStyle = name => [
@@ -262,7 +275,6 @@ export default function TelaCadastro({
           </View>
 
           <View style={styles.intro}>
-            {/* NOVA LOGO CINETRACK */}
             <View style={styles.logoContainer}>
               <Image
                 source={LOGO_CINETRACK}
@@ -772,9 +784,6 @@ const styles = StyleSheet.create({
   intro: {
     marginBottom: 23,
   },
-
-  // A imagem não recebe fundo, borda ou círculo.
-  // A transparência depende do arquivo PNG utilizado.
   logoContainer: {
     width: 112,
     height: 112,
@@ -788,7 +797,6 @@ const styles = StyleSheet.create({
     height: 112,
     backgroundColor: 'transparent',
   },
-
   kicker: {
     color: '#7DA9E8',
     fontSize: 12,

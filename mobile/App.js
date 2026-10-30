@@ -1,5 +1,6 @@
-
 import React, { useState, useEffect, useRef } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {
   StyleSheet,
   Text,
@@ -29,6 +30,8 @@ import Home from './home';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const CHAVE_SESSAO = '@CineTrack:usuario';
+
 const CORES = {
   fundo: '#050914',
   fundoCard: '#0C1424',
@@ -57,6 +60,9 @@ const TITULOS_FALLBACK = [
 
 export default function App() {
   const [telaAtual, setTelaAtual] = useState('HomeLanding');
+  const [usuarioAtual, setUsuarioAtual] = useState(null);
+  const [verificandoSessao, setVerificandoSessao] = useState(true);
+
   const [filmes, setFilmes] = useState([]);
   const [carregandoFilmes, setCarregandoFilmes] = useState(true);
 
@@ -66,7 +72,80 @@ export default function App() {
   const cardCenterAnim = useRef(new Animated.Value(38)).current;
   const cardRightAnim = useRef(new Animated.Value(24)).current;
 
-  // Carrega os filmes quando a landing page é exibida.
+  // Recupera a sessão salva.
+  useEffect(() => {
+    let ativo = true;
+
+    async function recuperarSessao() {
+      try {
+        const usuarioSalvo = await AsyncStorage.getItem(CHAVE_SESSAO);
+
+        if (!ativo) return;
+
+        if (usuarioSalvo) {
+          const usuario = JSON.parse(usuarioSalvo);
+
+          if (usuario && (usuario.id || usuario.email)) {
+            setUsuarioAtual(usuario);
+            setTelaAtual('Home');
+          } else {
+            await AsyncStorage.removeItem(CHAVE_SESSAO);
+          }
+        }
+      } catch (erro) {
+        console.warn('Não foi possível recuperar a sessão:', erro);
+
+        try {
+          await AsyncStorage.removeItem(CHAVE_SESSAO);
+        } catch (erroStorage) {
+          console.warn('Erro ao limpar sessão:', erroStorage);
+        }
+      } finally {
+        if (ativo) {
+          setVerificandoSessao(false);
+        }
+      }
+    }
+
+    recuperarSessao();
+
+    return () => {
+      ativo = false;
+    };
+  }, []);
+
+  // Salva o usuário que acabou de entrar.
+  const salvarSessao = async (usuario) => {
+    try {
+      if (!usuario) {
+        throw new Error('Os dados do usuário não foram recebidos.');
+      }
+
+      await AsyncStorage.setItem(
+        CHAVE_SESSAO,
+        JSON.stringify(usuario)
+      );
+
+      setUsuarioAtual(usuario);
+      setTelaAtual('Home');
+    } catch (erro) {
+      console.error('Erro ao salvar sessão:', erro);
+    }
+  };
+
+  // Encerra a sessão e limpa os dados da conta atual.
+  const encerrarSessao = async () => {
+    try {
+      await AsyncStorage.removeItem(CHAVE_SESSAO);
+    } catch (erro) {
+      console.warn('Erro ao encerrar sessão:', erro);
+    } finally {
+      setUsuarioAtual(null);
+      setTelaAtual('HomeLanding');
+    }
+  };
+
+  // Carrega os filmes da landing page.
   useEffect(() => {
     if (telaAtual !== 'HomeLanding') return;
 
@@ -93,7 +172,6 @@ export default function App() {
         }
       } catch (erro) {
         console.warn('Erro ao carregar filmes do TMDB:', erro);
-        // A tela continua funcionando com os pôsteres locais.
       } finally {
         if (ativo) {
           setCarregandoFilmes(false);
@@ -108,7 +186,7 @@ export default function App() {
     };
   }, [telaAtual]);
 
-  // Reinicia as animações ao voltar para a landing page.
+  // Animações da landing page.
   useEffect(() => {
     if (telaAtual !== 'HomeLanding') return;
 
@@ -124,24 +202,28 @@ export default function App() {
         duration: 650,
         useNativeDriver: true,
       }),
+
       Animated.spring(logoAnim, {
         toValue: 1,
         friction: 7,
         tension: 45,
         useNativeDriver: true,
       }),
+
       Animated.spring(cardLeftAnim, {
         toValue: 0,
         friction: 8,
         tension: 42,
         useNativeDriver: true,
       }),
+
       Animated.spring(cardCenterAnim, {
         toValue: 0,
         friction: 7,
         tension: 38,
         useNativeDriver: true,
       }),
+
       Animated.spring(cardRightAnim, {
         toValue: 0,
         friction: 8,
@@ -158,26 +240,74 @@ export default function App() {
     cardRightAnim,
   ]);
 
-  // Navegação.
+  if (verificandoSessao) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.container,
+          styles.telaCarregamento,
+        ]}
+      >
+        <StatusBar
+          barStyle="light-content"
+          backgroundColor={CORES.fundo}
+        />
+
+        <Image
+          source={LOGO}
+          style={styles.logoCarregamento}
+          resizeMode="contain"
+        />
+
+        <ActivityIndicator
+          size="large"
+          color={CORES.azul}
+        />
+
+        <Text style={styles.textoCarregamentoSessao}>
+          Preparando seu CineTrack...
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  // Cadastro.
   if (telaAtual === 'Cadastro') {
     return (
       <TelaCadastro
         onVoltar={() => setTelaAtual('HomeLanding')}
         onEntrar={() => setTelaAtual('Login')}
-        onCadastroSucesso={() => setTelaAtual('Generos')}
+        onCadastroSucesso={async (usuario) => {
+          try {
+            if (usuario) {
+              await AsyncStorage.setItem(
+                CHAVE_SESSAO,
+                JSON.stringify(usuario)
+              );
+
+              setUsuarioAtual(usuario);
+            }
+          } catch (erro) {
+            console.warn('Erro ao salvar cadastro:', erro);
+          }
+
+          setTelaAtual('Generos');
+        }}
       />
     );
   }
 
+  // Login.
   if (telaAtual === 'Login') {
     return (
       <TelaLogin
         onVoltar={() => setTelaAtual('HomeLanding')}
-        onLoginSucesso={() => setTelaAtual('Home')}
+        onLoginSucesso={salvarSessao}
       />
     );
   }
 
+  // Escolha de gêneros.
   if (telaAtual === 'Generos') {
     return (
       <EscolhaGeneros
@@ -187,8 +317,14 @@ export default function App() {
     );
   }
 
+  // Home personalizada com os dados da conta conectada.
   if (telaAtual === 'Home') {
-    return <Home onLogout={() => setTelaAtual('HomeLanding')} />;
+    return (
+      <Home
+        usuario={usuarioAtual}
+        onLogout={encerrarSessao}
+      />
+    );
   }
 
   const obterPoster = (filme, indice) => {
@@ -204,6 +340,7 @@ export default function App() {
   const obterTitulo = (filme, indice) => {
     if (filme?.title) return filme.title;
     if (filme?.name) return filme.name;
+
     return TITULOS_FALLBACK[indice];
   };
 
@@ -220,9 +357,17 @@ export default function App() {
       {Array.from({ length: 5 }, (_, indice) => (
         <Ionicons
           key={indice}
-          name={indice < quantidade ? 'star' : 'star-outline'}
+          name={
+            indice < quantidade
+              ? 'star'
+              : 'star-outline'
+          }
           size={tamanho}
-          color={indice < quantidade ? CORES.dourado : '#64748B'}
+          color={
+            indice < quantidade
+              ? CORES.dourado
+              : '#64748B'
+          }
           style={{ marginRight: 2 }}
         />
       ))}
@@ -237,22 +382,35 @@ export default function App() {
         {alturas.map((altura, indice) => (
           <View
             key={indice}
-            style={[styles.barraOnda, { height: altura }]}
+            style={[
+              styles.barraOnda,
+              { height: altura },
+            ]}
           />
         ))}
-        <Text style={styles.ondaLegenda}>TRILHA SONORA</Text>
+
+        <Text style={styles.ondaLegenda}>
+          TRILHA SONORA
+        </Text>
       </View>
     );
   };
 
-  const renderCardFilme = ({ filme, indice, tipo, animacao }) => {
+  const renderCardFilme = ({
+    filme,
+    indice,
+    tipo,
+    animacao,
+  }) => {
     const central = tipo === 'central';
 
     return (
       <Animated.View
         style={[
           styles.cardFilme,
-          central ? styles.cardCentral : styles.cardLateral,
+          central
+            ? styles.cardCentral
+            : styles.cardLateral,
           tipo === 'esquerda' && styles.cardEsquerdo,
           tipo === 'direita' && styles.cardDireito,
           {
@@ -261,7 +419,9 @@ export default function App() {
               outputRange: [1, 0.55],
               extrapolate: 'clamp',
             }),
-            transform: [{ translateY: animacao }],
+            transform: [
+              { translateY: animacao },
+            ],
           },
         ]}
       >
@@ -273,22 +433,22 @@ export default function App() {
         >
           <View style={styles.posterSombra} />
 
-          {central && (
-            <View style={styles.seloPopular}>
-              <Ionicons name="flame" size={14} color="#FFFFFF" />
-              <Text style={styles.seloPopularTexto}>EM DESTAQUE</Text>
-            </View>
-          )}
-
           <View style={styles.infoFilme}>
             <Text
               numberOfLines={2}
-              style={central ? styles.tituloCentral : styles.tituloLateral}
+              style={
+                central
+                  ? styles.tituloCentral
+                  : styles.tituloLateral
+              }
             >
               {obterTitulo(filme, indice)}
             </Text>
 
-            {renderEstrelas(central ? 5 : 4, central ? 13 : 11)}
+            {renderEstrelas(
+              central ? 5 : 4,
+              central ? 13 : 11
+            )}
 
             {central && renderOndaSonora()}
           </View>
@@ -310,14 +470,14 @@ export default function App() {
         backgroundColor={CORES.fundo}
       />
 
-      <View pointerEvents="none" style={styles.fundo} />
+      <View style={styles.fundo} />
 
       <ScrollView
-        contentContainerStyle={styles.conteudo}
         showsVerticalScrollIndicator={false}
-        bounces={false}
+        contentContainerStyle={styles.conteudo}
       >
-        {/* CARROSSEL: permanece visível durante o carregamento */}
+        {/* CARROSSEL DE FILMES */}
+
         <View style={styles.secaoDestaques}>
           <View style={styles.carrossel}>
             {renderCardFilme({
@@ -344,7 +504,11 @@ export default function App() {
 
           {carregandoFilmes && (
             <View style={styles.statusCarregamento}>
-              <ActivityIndicator size="small" color={CORES.azul} />
+              <ActivityIndicator
+                size="small"
+                color={CORES.azul}
+              />
+
               <Text style={styles.carregandoTexto}>
                 Atualizando destaques...
               </Text>
@@ -353,6 +517,7 @@ export default function App() {
         </View>
 
         {/* IDENTIDADE VISUAL */}
+
         <Animated.View
           style={[
             styles.secaoMarca,
@@ -371,18 +536,25 @@ export default function App() {
             />
 
             <Text style={styles.nomeMarca}>
-              CINE<Text style={styles.nomeMarcaAzul}>TRACK</Text>
+              CINE
+              <Text style={styles.nomeMarcaAzul}>
+                TRACK
+              </Text>
             </Text>
           </View>
 
           <Text style={styles.submarca}>
-            FILMES  ·  SÉRIES  ·  TRILHAS
+            FILMES · SÉRIES · TRILHAS
           </Text>
         </Animated.View>
 
         {/* DESCRIÇÃO */}
+
         <Animated.View
-          style={[styles.secaoDescricao, { opacity: fadeAnim }]}
+          style={[
+            styles.secaoDescricao,
+            { opacity: fadeAnim },
+          ]}
         >
           <Text style={styles.descricao}>
             Seu{' '}
@@ -394,27 +566,55 @@ export default function App() {
         </Animated.View>
 
         {/* RECURSOS */}
+
         <Animated.View
-          style={[styles.recursos, { opacity: fadeAnim }]}
+          style={[
+            styles.recursos,
+            { opacity: fadeAnim },
+          ]}
         >
           <View style={styles.etiquetaRecurso}>
-            <Ionicons name="videocam" size={16} color={CORES.azulClaro} />
-            <Text style={styles.textoRecurso}>Filmes & Séries</Text>
+            <Ionicons
+              name="videocam"
+              size={16}
+              color={CORES.azulClaro}
+            />
+            <Text style={styles.textoRecurso}>
+              Filmes & Séries
+            </Text>
           </View>
 
           <View style={styles.etiquetaRecurso}>
-            <Ionicons name="musical-notes" size={16} color="#38BDF8" />
-            <Text style={styles.textoRecurso}>Trilha via Spotify</Text>
+            <Ionicons
+              name="musical-notes"
+              size={16}
+              color="#38BDF8"
+            />
+            <Text style={styles.textoRecurso}>
+              Trilha via Spotify
+            </Text>
           </View>
 
           <View style={styles.etiquetaRecurso}>
-            <Ionicons name="people" size={16} color="#A5B4FC" />
-            <Text style={styles.textoRecurso}>Conexões</Text>
+            <Ionicons
+              name="people"
+              size={16}
+              color="#A5B4FC"
+            />
+            <Text style={styles.textoRecurso}>
+              Conexões
+            </Text>
           </View>
         </Animated.View>
 
         {/* AÇÕES PRINCIPAIS */}
-        <Animated.View style={[styles.acoes, { opacity: fadeAnim }]}>
+
+        <Animated.View
+          style={[
+            styles.acoes,
+            { opacity: fadeAnim },
+          ]}
+        >
           <TouchableOpacity
             style={styles.botaoCadastro}
             activeOpacity={0.82}
@@ -426,15 +626,25 @@ export default function App() {
               size={22}
               color="#FFFFFF"
             />
+
             <Text style={styles.textoBotaoCadastro}>
               Criar conta gratuita
             </Text>
-            <Feather name="arrow-right" size={19} color="#FFFFFF" />
+
+            <Feather
+              name="arrow-right"
+              size={19}
+              color="#FFFFFF"
+            />
           </TouchableOpacity>
 
           <View style={styles.divisorSocial}>
             <View style={styles.linhaDivisor} />
-            <Text style={styles.textoDivisor}>ou continue com</Text>
+
+            <Text style={styles.textoDivisor}>
+              ou continue com
+            </Text>
+
             <View style={styles.linhaDivisor} />
           </View>
 
@@ -442,21 +652,39 @@ export default function App() {
             <TouchableOpacity
               style={styles.botaoSocial}
               activeOpacity={0.8}
-              onPress={() => abrirLink('https://www.instagram.com/')}
+              onPress={() =>
+                abrirLink('https://www.instagram.com/')
+              }
               accessibilityRole="button"
             >
-              <Ionicons name="logo-instagram" size={21} color="#F472B6" />
-              <Text style={styles.textoSocial}>Instagram</Text>
+              <Ionicons
+                name="logo-instagram"
+                size={21}
+                color="#F472B6"
+              />
+
+              <Text style={styles.textoSocial}>
+                Instagram
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.botaoSocial}
               activeOpacity={0.8}
-              onPress={() => abrirLink('https://x.com/')}
+              onPress={() =>
+                abrirLink('https://x.com/')
+              }
               accessibilityRole="button"
             >
-              <Ionicons name="logo-x" size={19} color="#FFFFFF" />
-              <Text style={styles.textoSocial}>Twitter / X</Text>
+              <Ionicons
+                name="logo-x"
+                size={19}
+                color="#FFFFFF"
+              />
+
+              <Text style={styles.textoSocial}>
+                Twitter / X
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -468,34 +696,68 @@ export default function App() {
           >
             <Text style={styles.textoEntrar}>
               Já tenho uma conta —{' '}
-              <Text style={styles.textoEntrarDestaque}>Entrar</Text>
+              <Text style={styles.textoEntrarDestaque}>
+                Entrar
+              </Text>
             </Text>
           </TouchableOpacity>
 
           <Text style={styles.termos}>
             Ao criar uma conta, você aceita nossos{' '}
-            <Text style={styles.linkTermos}>Termos</Text>
-            {' '}e{' '}
-            <Text style={styles.linkTermos}>Privacidade</Text>.
+            <Text style={styles.linkTermos}>
+              Termos
+            </Text>{' '}
+            e{' '}
+            <Text style={styles.linkTermos}>
+              Privacidade
+            </Text>.
           </Text>
         </Animated.View>
 
         <View style={styles.rodape}>
           <View style={styles.pontoRodape} />
-          <Text style={styles.textoRodape}>CINETRACK</Text>
+
+          <Text style={styles.textoRodape}>
+            CINETRACK
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-const CARD_LATERAL = Math.min(132, SCREEN_WIDTH * 0.30);
-const CARD_CENTRAL = Math.min(190, SCREEN_WIDTH * 0.43);
+const CARD_LATERAL = Math.min(
+  132,
+  SCREEN_WIDTH * 0.30
+);
+
+const CARD_CENTRAL = Math.min(
+  190,
+  SCREEN_WIDTH * 0.43
+);
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: CORES.fundo,
+  },
+
+  telaCarregamento: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 18,
+  },
+
+  logoCarregamento: {
+    width: 105,
+    height: 105,
+  },
+
+  textoCarregamentoSessao: {
+    color: CORES.textoSecundario,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 
   fundo: {
@@ -620,26 +882,6 @@ const styles = StyleSheet.create({
   estrelas: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-
-  seloPopular: {
-    position: 'absolute',
-    top: 12,
-    left: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#EF4444',
-  },
-
-  seloPopularTexto: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '900',
-    letterSpacing: 0.3,
   },
 
   ondaSonora: {
