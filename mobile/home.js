@@ -1,10 +1,18 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
 import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   Dimensions,
   Image,
+  Modal,
   Platform,
   RefreshControl,
   SafeAreaView,
@@ -16,7 +24,9 @@ import {
   View,
 } from 'react-native';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { LinearGradient } from 'expo-linear-gradient';
+
 import {
   Ionicons,
   Feather,
@@ -24,9 +34,25 @@ import {
   AntDesign,
 } from '@expo/vector-icons';
 
-import { getFilmesEmAlta, getSeriesEmAlta } from './services';
+import {
+  getFilmesEmAlta,
+  getSeriesEmAlta,
+} from './services';
+
+import Buscar from './buscar';
+
+// ============================================================
+// CONFIGURAÇÕES
+// ============================================================
 
 const LOGO_CINETRACK = require('./assets/logo-cinetrack.png');
+
+const CHAVE_AVALIACOES = '@CineTrack:avaliacoes';
+const CHAVE_REGISTROS = '@CineTrack:registros';
+
+const TMDB_KEY = '5c1853c10d9752023da5ddce4ada3b77';
+const TMDB_BASE = 'https://api.themoviedb.org/3';
+const TMDB_IMAGE = 'https://image.tmdb.org/t/p/w500';
 
 const COLORS = {
   bg: '#050608',
@@ -44,8 +70,15 @@ const COLORS = {
 };
 
 const { width } = Dimensions.get('window');
-const CARD_WIDTH = Math.min(142, Math.max(112, (width - 76) / 3));
-const TMDB_IMAGE = 'https://image.tmdb.org/t/p/w500';
+
+const CARD_WIDTH = Math.min(
+  142,
+  Math.max(112, (width - 76) / 3)
+);
+
+// ============================================================
+// FUNÇÕES AUXILIARES
+// ============================================================
 
 const nomeUsuario = usuario =>
   usuario?.username ||
@@ -63,17 +96,452 @@ const iniciais = nome =>
     .join('') || 'C';
 
 const formatarData = valor => {
-  if (!valor) return 'Recentemente';
+  if (!valor) return 'Data não informada';
 
   const data = new Date(valor);
 
-  if (Number.isNaN(data.getTime())) return 'Recentemente';
+  if (Number.isNaN(data.getTime())) {
+    return 'Data não informada';
+  }
 
   return data.toLocaleDateString('pt-BR', {
     day: '2-digit',
     month: 'short',
+    year: 'numeric',
   });
 };
+
+const obterImagem = poster => {
+  if (!poster) return null;
+
+  const valor = String(poster);
+
+  return valor.startsWith('http')
+    ? valor
+    : `${TMDB_IMAGE}${valor}`;
+};
+
+const lerJSON = texto => {
+  if (!texto) return null;
+
+  try {
+    return JSON.parse(texto);
+  } catch (erro) {
+    console.warn(
+      'Erro ao interpretar dados salvos:',
+      erro
+    );
+
+    return null;
+  }
+};
+
+const normalizarTipo = (
+  tipo,
+  chave = '',
+  registro = {}
+) => {
+  const valor = String(tipo || '').toLowerCase();
+
+  if (
+    ['tv', 'serie', 'série', 'series', 'show'].includes(valor)
+  ) {
+    return 'tv';
+  }
+
+  if (
+    ['movie', 'filme', 'filmes', 'movies'].includes(valor)
+  ) {
+    return 'movie';
+  }
+
+  const correspondencia = String(chave).match(
+    /^(movie|tv|serie|série|filme)[-_]/i
+  );
+
+  if (correspondencia) {
+    return ['tv', 'serie', 'série'].includes(
+      correspondencia[1].toLowerCase()
+    )
+      ? 'tv'
+      : 'movie';
+  }
+
+  if (
+    registro.first_air_date ||
+    registro.original_name ||
+    registro.name
+  ) {
+    return 'tv';
+  }
+
+  return 'movie';
+};
+
+// ============================================================
+// EXTRAIR REGISTROS
+// ============================================================
+
+function obterEntradas(dados) {
+  if (!dados) return [];
+
+  if (Array.isArray(dados)) {
+    return dados.map((item, index) => [
+      String(item?.id || index),
+      item,
+    ]);
+  }
+
+  if (typeof dados !== 'object') {
+    return [];
+  }
+
+  const possiveisChaves = [
+    'avaliacoes',
+    'registros',
+    'itens',
+    'filmes',
+    'results',
+    'data',
+  ];
+
+  for (const chave of possiveisChaves) {
+    if (Array.isArray(dados[chave])) {
+      return dados[chave].map((item, index) => [
+        String(item?.id || index),
+        item,
+      ]);
+    }
+  }
+
+  return Object.entries(dados).filter(
+    ([, item]) =>
+      item &&
+      typeof item === 'object' &&
+      !Array.isArray(item)
+  );
+}
+
+// ============================================================
+// NORMALIZAR REGISTRO
+// ============================================================
+
+function normalizarRegistro(registro, chave = '') {
+  if (!registro || typeof registro !== 'object') {
+    return null;
+  }
+
+  const midia =
+    registro.media ||
+    registro.midia ||
+    registro.filme ||
+    registro.serie ||
+    registro.obra ||
+    {};
+
+  const combinado = {
+    ...registro,
+    ...midia,
+  };
+
+  const correspondencia = String(chave).match(
+    /^(movie|tv|serie|série|filme)[-_](.+)$/i
+  );
+
+  const id =
+    combinado.tmdb_id ??
+    combinado.media_id ??
+    combinado.id ??
+    correspondencia?.[2];
+
+  if (
+    id === undefined ||
+    id === null ||
+    id === ''
+  ) {
+    return null;
+  }
+
+  const tipo = normalizarTipo(
+    combinado.tipo ||
+    combinado.media_type ||
+    combinado.mediaType,
+    chave,
+    combinado
+  );
+
+  const notaOriginal =
+    combinado.nota ??
+    combinado.stars ??
+    combinado.rating ??
+    combinado.avaliacao ??
+    null;
+
+  const nota =
+    notaOriginal !== null &&
+    notaOriginal !== undefined &&
+    Number.isFinite(Number(notaOriginal))
+      ? Number(notaOriginal)
+      : null;
+
+  const status = String(
+    combinado.status ||
+    combinado.situacao ||
+    combinado.progresso ||
+    ''
+  ).toLowerCase();
+
+  const data =
+    combinado.watch_date ||
+    combinado.watched_at ||
+    combinado.assistido_em ||
+    combinado.data_assistido ||
+    combinado.data ||
+    combinado.atualizado_em ||
+    combinado.created_at ||
+    combinado.updated_at ||
+    null;
+
+  const statusAssistido = [
+    'assistido',
+    'assistida',
+    'watched',
+    'completed',
+    'complete',
+    'concluido',
+    'concluída',
+    'concluida',
+    'finalizado',
+    'finalizada',
+    'finished',
+  ];
+
+  const assistido =
+    (nota !== null && nota > 0) ||
+    combinado.assistido === true ||
+    combinado.watched === true ||
+    combinado.concluido === true ||
+    statusAssistido.includes(status) ||
+    Boolean(
+      combinado.watch_date ||
+      combinado.watched_at ||
+      combinado.assistido_em ||
+      combinado.data_assistido
+    );
+
+  const titulo =
+    combinado.title ||
+    combinado.name ||
+    combinado.titulo ||
+    combinado.media_title ||
+    null;
+
+  const poster =
+    combinado.poster_path ||
+    combinado.poster_url ||
+    combinado.poster ||
+    null;
+
+  return {
+    ...combinado,
+
+    id: String(id),
+    tmdb_id: String(id),
+    tipo,
+
+    title: titulo,
+    titulo,
+
+    poster_path: poster,
+    poster,
+
+    nota,
+    rating: nota,
+
+    data,
+
+    atualizado_em:
+      combinado.atualizado_em ||
+      combinado.created_at ||
+      data,
+
+    status,
+    assistido,
+
+    review:
+      combinado.review ||
+      combinado.comentario ||
+      combinado.comment ||
+      '',
+
+    runtime_total_minutos: Number(
+      combinado.runtime_total_minutos ||
+      combinado.duracao_total_minutos ||
+      0
+    ),
+
+    duracao_minutos: Number(
+      combinado.duracao_minutos ||
+      combinado.duration_minutes ||
+      0
+    ),
+  };
+}
+
+// ============================================================
+// REMOVER DUPLICADOS
+// ============================================================
+
+function removerDuplicados(lista) {
+  const mapa = new Map();
+
+  lista.forEach(item => {
+    if (!item?.id || !item?.tipo) return;
+
+    const chave = `${item.tipo}-${item.id}`;
+    const anterior = mapa.get(chave);
+
+    if (!anterior) {
+      mapa.set(chave, item);
+      return;
+    }
+
+    mapa.set(chave, {
+      ...anterior,
+      ...item,
+
+      title: item.title || anterior.title,
+      titulo: item.title || anterior.title,
+
+      poster_path:
+        item.poster_path ||
+        anterior.poster_path,
+
+      nota: item.nota ?? anterior.nota,
+
+      review:
+        item.review ||
+        anterior.review,
+
+      data:
+        item.data ||
+        anterior.data,
+
+      runtime_total_minutos:
+        item.runtime_total_minutos ||
+        anterior.runtime_total_minutos,
+    });
+  });
+
+  return Array.from(mapa.values());
+}
+
+// ============================================================
+// CONSULTAR DETALHES E DURAÇÃO NO TMDB
+// ============================================================
+
+async function buscarDadosTMDB(tipo, id) {
+  try {
+    const resposta = await fetch(
+      `${TMDB_BASE}/${tipo}/${id}?api_key=${TMDB_KEY}&language=pt-BR`
+    );
+
+    if (!resposta.ok) {
+      return null;
+    }
+
+    const dados = await resposta.json();
+
+    let duracaoTotal = 0;
+    let duracaoUnidade = 0;
+    let quantidadeEpisodios = 0;
+
+    if (tipo === 'movie') {
+      duracaoTotal = Number(dados.runtime || 0);
+      duracaoUnidade = duracaoTotal;
+    } else {
+      const duracoes = Array.isArray(dados.episode_run_time)
+        ? dados.episode_run_time
+            .map(Number)
+            .filter(valor => valor > 0)
+        : [];
+
+      quantidadeEpisodios = Number(
+        dados.number_of_episodes || 0
+      );
+
+      if (
+        duracoes.length &&
+        quantidadeEpisodios > 0
+      ) {
+        duracaoUnidade = Math.round(
+          duracoes.reduce(
+            (total, valor) => total + valor,
+            0
+          ) / duracoes.length
+        );
+
+        duracaoTotal =
+          duracaoUnidade * quantidadeEpisodios;
+      }
+    }
+
+    return {
+      title: dados.title || dados.name || null,
+      titulo: dados.title || dados.name || null,
+
+      poster_path: dados.poster_path || null,
+      backdrop_path: dados.backdrop_path || null,
+
+      release_date:
+        dados.release_date ||
+        dados.first_air_date ||
+        null,
+
+      vote_average: dados.vote_average || 0,
+
+      runtime: duracaoUnidade,
+      number_of_episodes: quantidadeEpisodios,
+
+      runtime_total_minutos: duracaoTotal,
+    };
+  } catch (erro) {
+    console.warn(
+      `Erro ao consultar ${tipo}-${id} no TMDB:`,
+      erro
+    );
+
+    return null;
+  }
+}
+
+// ============================================================
+// FORMATAR TEMPO
+// ============================================================
+
+function formatarTempoTotal(minutos) {
+  const total = Math.max(
+    0,
+    Math.round(minutos || 0)
+  );
+
+  const horas = Math.floor(total / 60);
+  const minutosRestantes = total % 60;
+
+  if (horas === 0) {
+    return `${minutosRestantes}min`;
+  }
+
+  if (minutosRestantes === 0) {
+    return `${horas}h`;
+  }
+
+  return `${horas}h ${minutosRestantes}m`;
+}
+
+// ============================================================
+// COMPONENTE HOME
+// ============================================================
 
 export default function Home({
   usuario = null,
@@ -82,12 +550,22 @@ export default function Home({
   onAbrirDiario,
   onAbrirPerfil,
   onAdicionar,
+  onAbrirDetalhes,
 }) {
   const [filmes, setFilmes] = useState([]);
   const [series, setSeries] = useState([]);
+
+  const [registrosLocais, setRegistrosLocais] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [carregandoDiario, setCarregandoDiario] = useState(true);
+
   const [abaAtiva, setAbaAtiva] = useState('Home');
+  const [telaInterna, setTelaInterna] = useState('Home');
+
+  // IMPORTANTE: este estado só é declarado uma vez.
+  const [listaAberta, setListaAberta] = useState(null);
 
   const fade = useRef(new Animated.Value(0)).current;
 
@@ -99,31 +577,316 @@ export default function Home({
     usuario?.foto ||
     null;
 
-  const stats = usuario?.stats || usuario?.estatisticas || {};
-
-  const registros = Array.isArray(usuario?.registros)
-    ? usuario.registros
-    : [];
-
-  const atividades = Array.isArray(usuario?.atividades)
-    ? usuario.atividades
-    : [];
+  const stats =
+    usuario?.stats ||
+    usuario?.estatisticas ||
+    {};
 
   const conexoes = Array.isArray(usuario?.conexoes)
     ? usuario.conexoes
     : [];
 
-  const totalFilmes = Number(
-    stats.filmes_assistidos ?? stats.filmes ?? 0
+  const atividadesUsuario = Array.isArray(usuario?.atividades)
+    ? usuario.atividades
+    : [];
+
+  // ==========================================================
+  // CARREGAR E SINCRONIZAR O DIÁRIO
+  // ==========================================================
+
+  const carregarDiario = useCallback(async () => {
+    setCarregandoDiario(true);
+
+    try {
+      const valores = await AsyncStorage.multiGet([
+        CHAVE_AVALIACOES,
+        CHAVE_REGISTROS,
+      ]);
+
+      const dadosAvaliacoes = lerJSON(valores?.[0]?.[1]);
+      const dadosRegistros = lerJSON(valores?.[1]?.[1]);
+
+      const entradasAvaliacoes = obterEntradas(
+        dadosAvaliacoes
+      );
+
+      const entradasRegistros = obterEntradas(
+        dadosRegistros
+      );
+
+      const registrosUsuario = Array.isArray(usuario?.registros)
+        ? usuario.registros.map((item, index) => [
+            String(item?.id || index),
+            item,
+          ])
+        : [];
+
+      const entradas = [
+        ...entradasAvaliacoes,
+        ...entradasRegistros,
+        ...registrosUsuario,
+      ];
+
+      const normalizados = entradas
+        .map(([chave, item]) =>
+          normalizarRegistro(item, chave)
+        )
+        .filter(Boolean);
+
+      const registrosUnicos = removerDuplicados(
+        normalizados
+      );
+
+      // Busca informações que não foram gravadas na avaliação.
+      const enriquecidos = await Promise.all(
+        registrosUnicos.map(async registro => {
+          const precisaBuscar =
+            !registro.title ||
+            !registro.poster_path ||
+            !registro.runtime_total_minutos;
+
+          if (!precisaBuscar) {
+            return registro;
+          }
+
+          const dadosTMDB = await buscarDadosTMDB(
+            registro.tipo,
+            registro.id
+          );
+
+          if (!dadosTMDB) {
+            return registro;
+          }
+
+          return {
+            ...registro,
+            ...dadosTMDB,
+
+            title:
+              dadosTMDB.title ||
+              registro.title ||
+              'Obra sem título',
+
+            titulo:
+              dadosTMDB.title ||
+              registro.title ||
+              'Obra sem título',
+
+            poster_path:
+              dadosTMDB.poster_path ||
+              registro.poster_path,
+
+            poster:
+              dadosTMDB.poster_path ||
+              registro.poster_path,
+
+            runtime_total_minutos:
+              dadosTMDB.runtime_total_minutos ||
+              registro.runtime_total_minutos ||
+              0,
+          };
+        })
+      );
+
+      const registrosFinais = removerDuplicados(
+        enriquecidos
+      );
+
+      setRegistrosLocais(registrosFinais);
+
+      // Atualiza o cache das avaliações sem mudar seu formato.
+      if (
+        dadosAvaliacoes &&
+        typeof dadosAvaliacoes === 'object'
+      ) {
+        let atualizadas = dadosAvaliacoes;
+
+        if (Array.isArray(dadosAvaliacoes)) {
+          atualizadas = dadosAvaliacoes.map(item => {
+            const normalizado = normalizarRegistro(item);
+
+            if (!normalizado) return item;
+
+            const completo = registrosFinais.find(
+              registro =>
+                registro.tipo === normalizado.tipo &&
+                registro.id === normalizado.id
+            );
+
+            return completo
+              ? {
+                  ...item,
+                  title: completo.title,
+                  poster_path: completo.poster_path,
+                  runtime_total_minutos:
+                    completo.runtime_total_minutos,
+                  runtime: completo.runtime,
+                  number_of_episodes:
+                    completo.number_of_episodes,
+                }
+              : item;
+          });
+        } else {
+          atualizadas = { ...dadosAvaliacoes };
+
+          registrosFinais.forEach(registro => {
+            const chave = `${registro.tipo}-${registro.id}`;
+
+            const chaveOriginal = Object.keys(atualizadas).find(
+              k => {
+                const normalizado = normalizarRegistro(
+                  atualizadas[k],
+                  k
+                );
+
+                return (
+                  normalizado &&
+                  normalizado.tipo === registro.tipo &&
+                  normalizado.id === registro.id
+                );
+              }
+            );
+
+            const chaveSalvar = chaveOriginal || chave;
+
+            atualizadas[chaveSalvar] = {
+              ...(atualizadas[chaveSalvar] || {}),
+
+              id: registro.id,
+              tmdb_id: registro.id,
+              tipo: registro.tipo,
+
+              title: registro.title,
+              poster_path: registro.poster_path,
+
+              nota: registro.nota,
+              stars: registro.nota,
+
+              runtime_total_minutos:
+                registro.runtime_total_minutos,
+
+              runtime: registro.runtime,
+
+              number_of_episodes:
+                registro.number_of_episodes,
+
+              atualizado_em:
+                registro.atualizado_em ||
+                new Date().toISOString(),
+            };
+          });
+        }
+
+        await AsyncStorage.setItem(
+          CHAVE_AVALIACOES,
+          JSON.stringify(atualizadas)
+        );
+      }
+    } catch (erro) {
+      console.error(
+        'Erro ao sincronizar o diário:',
+        erro
+      );
+    } finally {
+      setCarregandoDiario(false);
+    }
+  }, [usuario]);
+
+  // ==========================================================
+  // ESTATÍSTICAS
+  // ==========================================================
+
+  const registrosAssistidos = registrosLocais.filter(
+    item => item.assistido
   );
 
-  const totalSeries = Number(
-    stats.series_em_andamento ?? stats.series ?? 0
+  const filmesAssistidos = removerDuplicados(
+    registrosAssistidos.filter(
+      item => item.tipo === 'movie'
+    )
   );
 
-  const totalHoras = Number(
-    stats.horas_assistidas ?? stats.horas ?? 0
+  const seriesAssistidas = removerDuplicados(
+    registrosAssistidos.filter(
+      item => item.tipo === 'tv'
+    )
   );
+
+  const todosAssistidos = removerDuplicados([
+    ...filmesAssistidos,
+    ...seriesAssistidas,
+  ]);
+
+  const totalFilmesLocal = filmesAssistidos.length;
+  const totalSeriesLocal = seriesAssistidas.length;
+
+  const totalMinutosLocal = todosAssistidos.reduce(
+    (total, item) => {
+      const duracao = Number(
+        item.runtime_total_minutos ||
+        item.duracao_total_minutos ||
+        item.duracao_minutos ||
+        0
+      );
+
+      return total + (
+        Number.isFinite(duracao) ? duracao : 0
+      );
+    },
+    0
+  );
+
+  const totalFilmesBackend = Number(
+    stats.filmes_assistidos ??
+    stats.filmes ??
+    0
+  );
+
+  const totalSeriesBackend = Number(
+    stats.series_avaliadas ??
+    stats.series_em_andamento ??
+    stats.series ??
+    0
+  );
+
+  const totalHorasBackend = Number(
+    stats.horas_assistidas ??
+    stats.horas ??
+    0
+  );
+
+  const totalFilmes = Math.max(
+    totalFilmesLocal,
+    totalFilmesBackend
+  );
+
+  const totalSeries = Math.max(
+    totalSeriesLocal,
+    totalSeriesBackend
+  );
+
+  const totalMinutos = Math.max(
+    totalMinutosLocal,
+    totalHorasBackend * 60
+  );
+
+  const tempoEmTela = formatarTempoTotal(totalMinutos);
+
+  const registros = [...registrosLocais].sort((a, b) => {
+    const dataA = new Date(
+      a.data || a.atualizado_em || 0
+    ).getTime() || 0;
+
+    const dataB = new Date(
+      b.data || b.atualizado_em || 0
+    ).getTime() || 0;
+
+    return dataB - dataA;
+  });
+
+  // ==========================================================
+  // CARREGAMENTO DO CATÁLOGO
+  // ==========================================================
 
   const carregarCatalogo = useCallback(async () => {
     try {
@@ -143,13 +906,19 @@ export default function Home({
           ? s.results.slice(0, 10)
           : []
       );
-    } catch (e) {
-      console.warn('Não foi possível carregar o catálogo:', e);
+    } catch (erro) {
+      console.warn(
+        'Não foi possível carregar o catálogo:',
+        erro
+      );
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
+
+  // ==========================================================
+  // CARREGAMENTO INICIAL
+  // ==========================================================
 
   useEffect(() => {
     Animated.timing(fade, {
@@ -159,32 +928,153 @@ export default function Home({
     }).start();
 
     carregarCatalogo();
-  }, [carregarCatalogo, fade]);
+    carregarDiario();
+  }, [
+    carregarCatalogo,
+    carregarDiario,
+    fade,
+  ]);
 
-  const atualizar = useCallback(() => {
+  // ==========================================================
+  // ATUALIZAR QUANDO O APP VOLTAR AO PRIMEIRO PLANO
+  // ==========================================================
+
+  useEffect(() => {
+    const inscricao = AppState.addEventListener(
+      'change',
+      estado => {
+        if (estado === 'active') {
+          carregarDiario();
+        }
+      }
+    );
+
+    return () => inscricao.remove();
+  }, [carregarDiario]);
+
+  // ==========================================================
+  // ATUALIZAR MANUALMENTE
+  // ==========================================================
+
+  const atualizar = useCallback(async () => {
     setRefreshing(true);
-    carregarCatalogo();
-  }, [carregarCatalogo]);
+
+    try {
+      await Promise.all([
+        carregarCatalogo(),
+        carregarDiario(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [
+    carregarCatalogo,
+    carregarDiario,
+  ]);
+
+  // ==========================================================
+  // NAVEGAÇÃO
+  // ==========================================================
 
   const abrirAba = (aba, callback) => {
     setAbaAtiva(aba);
 
-    if (callback) {
-      callback();
-    } else if (aba !== 'Home') {
-      Alert.alert(
-        aba,
-        'Esta área será conectada à tela correspondente na próxima etapa do desenvolvimento.'
-      );
+    if (aba === 'Buscar') {
+      setTelaInterna('Buscar');
+      return;
     }
+
+    if (aba === 'Home') {
+      setTelaInterna('Home');
+      carregarDiario();
+      return;
+    }
+
+    if (typeof callback === 'function') {
+      callback();
+      return;
+    }
+
+    Alert.alert(
+      aba,
+      'Esta área será conectada à tela correspondente na próxima etapa do desenvolvimento.'
+    );
   };
+
+  const voltarDaBusca = () => {
+    setTelaInterna('Home');
+    setAbaAtiva('Home');
+    carregarDiario();
+  };
+
+  const abrirMidia = (item, tipoInformado = null) => {
+    if (
+      !item?.id ||
+      typeof onAbrirDetalhes !== 'function'
+    ) {
+      return;
+    }
+
+    const tipo = normalizarTipo(
+      tipoInformado ||
+      item.tipo ||
+      item.media_type,
+      '',
+      item
+    );
+
+    onAbrirDetalhes({
+      ...item,
+      id: item.id,
+      tipo,
+      media: item,
+    });
+  };
+
+  // ==========================================================
+  // MODAL DO DIÁRIO
+  // Não declarar novamente o estado listaAberta aqui.
+  // ==========================================================
+
+  const abrirLista = tipo => {
+    setListaAberta(tipo);
+  };
+
+  const fecharLista = () => {
+    setListaAberta(null);
+  };
+
+  const midiasDaLista =
+    listaAberta === 'filmes'
+      ? filmesAssistidos
+      : listaAberta === 'series'
+        ? seriesAssistidas
+        : todosAssistidos;
+
+  const tituloDaLista =
+    listaAberta === 'filmes'
+      ? 'FILMES ASSISTIDOS'
+      : listaAberta === 'series'
+        ? 'SÉRIES AVALIADAS'
+        : 'MEU DIÁRIO';
+
+  // ==========================================================
+  // TÍTULOS DAS SEÇÕES
+  // ==========================================================
 
   const renderTituloSecao = titulo => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{titulo}</Text>
+      <Text style={styles.sectionTitle}>
+        {titulo}
+      </Text>
+
       <View style={styles.sectionRule} />
     </View>
   );
+
+  // ==========================================================
+  // CARDS DO CATÁLOGO
+  // ==========================================================
 
   const renderMidias = (lista, tipo) => {
     if (loading) {
@@ -221,6 +1111,12 @@ export default function Home({
               key={`${tipo}-${item.id}`}
               activeOpacity={0.85}
               style={styles.mediaCard}
+              onPress={() =>
+                abrirMidia(
+                  item,
+                  tipo === 'filme' ? 'movie' : 'tv'
+                )
+              }
             >
               {item.poster_path ? (
                 <Image
@@ -257,8 +1153,11 @@ export default function Home({
                   size={11}
                   color={COLORS.yellow}
                 />
+
                 <Text style={styles.rating}>
-                  {Number(item.vote_average || 0).toFixed(1)}
+                  {Number(
+                    item.vote_average || 0
+                  ).toFixed(1)}
                 </Text>
               </View>
 
@@ -274,30 +1173,28 @@ export default function Home({
     );
   };
 
+  // ==========================================================
+  // CARDS DOS REGISTROS
+  // ==========================================================
+
   const renderRegistro = (item, index) => {
     const titulo =
-      item.titulo ||
       item.title ||
-      item.media_title ||
+      item.titulo ||
       'Obra sem título';
 
-    const poster =
-      item.poster_url ||
+    const imagem = obterImagem(
+      item.poster_path ||
       item.poster ||
-      item.poster_path;
-
-    const imagem = poster
-      ? String(poster).startsWith('http')
-        ? poster
-        : `${TMDB_IMAGE}${poster}`
-      : null;
-
-    const nota = item.nota ?? item.rating;
+      item.poster_url
+    );
 
     return (
-      <View
-        key={item.id || `${titulo}-${index}`}
+      <TouchableOpacity
+        key={`${item.tipo}-${item.id || index}`}
+        activeOpacity={0.85}
         style={styles.recordCard}
+        onPress={() => abrirMidia(item)}
       >
         {imagem ? (
           <Image
@@ -312,7 +1209,7 @@ export default function Home({
             ]}
           >
             <Ionicons
-              name="film-outline"
+              name={item.tipo === 'tv' ? 'tv-outline' : 'film-outline'}
               size={25}
               color={COLORS.muted}
             />
@@ -329,40 +1226,46 @@ export default function Home({
 
           <Text style={styles.recordDate}>
             {formatarData(
-              item.created_at ||
               item.data ||
-              item.watched_at
+              item.atualizado_em
             )}
           </Text>
 
-          {nota !== undefined && nota !== null ? (
-            <Text style={styles.recordRating}>
-              ★ {nota}/5
-            </Text>
-          ) : (
-            <Text style={styles.recordDescription}>
-              Registro no diário
-            </Text>
-          )}
+          <Text style={styles.recordRating}>
+            ★ {item.nota ?? item.rating ?? '—'}/5
+          </Text>
 
-          {!!(
-            item.review ||
-            item.comentario ||
-            item.comment
-          ) && (
-            <Text
-              style={styles.recordReview}
-              numberOfLines={2}
-            >
-              {item.review ||
-                item.comentario ||
-                item.comment}
-            </Text>
-          )}
+          <Text style={styles.recordType}>
+            {item.tipo === 'tv' ? 'SÉRIE' : 'FILME'}
+          </Text>
         </View>
-      </View>
+
+        <Feather
+          name="chevron-right"
+          size={18}
+          color={COLORS.muted}
+        />
+      </TouchableOpacity>
     );
   };
+
+  // ==========================================================
+  // TELA DE BUSCA
+  // ==========================================================
+
+  if (telaInterna === 'Buscar') {
+    return (
+      <Buscar
+        onVoltar={voltarDaBusca}
+        onAbrirDetalhes={onAbrirDetalhes}
+        onAbrirPerfil={onAbrirPerfil}
+      />
+    );
+  }
+
+  // ==========================================================
+  // RENDERIZAÇÃO DA HOME
+  // ==========================================================
 
   return (
     <SafeAreaView style={styles.container}>
@@ -372,7 +1275,7 @@ export default function Home({
         translucent={false}
       />
 
-      {/* CABEÇALHO DA MARCA */}
+      {/* CABEÇALHO */}
 
       <View style={styles.header}>
         <View style={styles.brandContainer}>
@@ -387,7 +1290,10 @@ export default function Home({
 
           <View style={styles.brandTextContainer}>
             <Text style={styles.brandName}>
-              CINE<Text style={styles.brandNameBlue}>TRACK</Text>
+              CINE
+              <Text style={styles.brandNameBlue}>
+                TRACK
+              </Text>
             </Text>
 
             <Text style={styles.brandSubtitle}>
@@ -405,13 +1311,13 @@ export default function Home({
                 'Você não tem notificações novas.'
               )
             }
-            accessibilityLabel="Notificações"
           >
             <Feather
               name="bell"
               size={19}
               color={COLORS.text}
             />
+
             <View style={styles.notificationDot} />
           </TouchableOpacity>
 
@@ -435,6 +1341,8 @@ export default function Home({
         </View>
       </View>
 
+      {/* CONTEÚDO */}
+
       <Animated.ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -447,6 +1355,8 @@ export default function Home({
         }
         style={{ opacity: fade }}
       >
+        {/* BOAS-VINDAS */}
+
         <View style={styles.welcome}>
           <Text style={styles.eyebrow}>
             SEU UNIVERSO AUDIOVISUAL
@@ -464,11 +1374,17 @@ export default function Home({
           </Text>
         </View>
 
+        {/* CONTINUAR ASSISTINDO */}
+
         {renderTituloSecao('CONTINUAR ASSISTINDO')}
 
         <View style={styles.heroCard}>
           <LinearGradient
-            colors={['#17113B', '#0D1424', '#0B0D12']}
+            colors={[
+              '#17113B',
+              '#0D1424',
+              '#0B0D12',
+            ]}
             style={StyleSheet.absoluteFillObject}
           />
 
@@ -505,9 +1421,7 @@ export default function Home({
 
           <TouchableOpacity
             style={styles.heroAction}
-            onPress={() =>
-              abrirAba('Adicionar', onAdicionar)
-            }
+            onPress={onAdicionar}
           >
             <Ionicons
               name="play"
@@ -517,69 +1431,126 @@ export default function Home({
           </TouchableOpacity>
         </View>
 
+        {/* MEU DIÁRIO */}
+
         {renderTituloSecao('MEU DIÁRIO')}
 
         <View style={styles.statsGrid}>
-          {[
-            {
-              value: totalFilmes,
-              label: 'filmes',
-              sub: 'assistidos',
-              color: COLORS.blue,
-              icon: 'film',
-            },
-            {
-              value: totalSeries,
-              label: 'séries',
-              sub: 'em andamento',
-              color: COLORS.green,
-              icon: 'tv',
-            },
-            {
-              value: totalHoras,
-              label: 'horas',
-              sub: 'em tela',
-              color: COLORS.pink,
-              icon: 'clock',
-            },
-          ].map((stat, i) => (
+          {/* FILMES */}
+
+          <TouchableOpacity
+            activeOpacity={0.78}
+            style={styles.statCard}
+            onPress={() => abrirLista('filmes')}
+          >
+            <Feather
+              name="film"
+              size={17}
+              color={COLORS.blue}
+            />
+
+            <Text style={styles.statNumber}>
+              {carregandoDiario ? '...' : totalFilmes}
+            </Text>
+
+            <Text style={styles.statLabel}>
+              filmes assistidos
+            </Text>
+
+            <Text style={styles.statVerTexto}>
+              Ver lista
+            </Text>
+
             <View
-              key={i}
-              style={styles.statCard}
+              style={[
+                styles.statLine,
+                { backgroundColor: COLORS.blue },
+              ]}
+            />
+          </TouchableOpacity>
+
+          {/* SÉRIES */}
+
+          <TouchableOpacity
+            activeOpacity={0.78}
+            style={styles.statCard}
+            onPress={() => abrirLista('series')}
+          >
+            <Feather
+              name="tv"
+              size={17}
+              color={COLORS.green}
+            />
+
+            <Text style={styles.statNumber}>
+              {carregandoDiario ? '...' : totalSeries}
+            </Text>
+
+            <Text style={styles.statLabel}>
+              séries avaliadas
+            </Text>
+
+            <Text style={styles.statVerTexto}>
+              Ver lista
+            </Text>
+
+            <View
+              style={[
+                styles.statLine,
+                { backgroundColor: COLORS.green },
+              ]}
+            />
+          </TouchableOpacity>
+
+          {/* HORAS */}
+
+          <TouchableOpacity
+            activeOpacity={0.78}
+            style={styles.statCard}
+            onPress={() => abrirLista('todos')}
+          >
+            <Feather
+              name="clock"
+              size={17}
+              color={COLORS.pink}
+            />
+
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={styles.statNumberHoras}
             >
-              <Feather
-                name={stat.icon}
-                size={17}
-                color={stat.color}
-              />
+              {carregandoDiario ? '...' : tempoEmTela}
+            </Text>
 
-              <Text style={styles.statNumber}>
-                {stat.value}
-              </Text>
+            <Text style={styles.statLabel}>
+              horas em tela
+            </Text>
 
-              <Text style={styles.statLabel}>
-                {stat.label}
-              </Text>
+            <Text style={styles.statVerTexto}>
+              Ver diário
+            </Text>
 
-              <Text style={styles.statSub}>
-                {stat.sub}
-              </Text>
-
-              <View
-                style={[
-                  styles.statLine,
-                  { backgroundColor: stat.color },
-                ]}
-              />
-            </View>
-          ))}
+            <View
+              style={[
+                styles.statLine,
+                { backgroundColor: COLORS.pink },
+              ]}
+            />
+          </TouchableOpacity>
         </View>
+
+        {/* FILMES EM ALTA */}
 
         {renderTituloSecao('FILMES EM ALTA')}
         {renderMidias(filmes, 'filme')}
 
+        {/* SÉRIES EM ALTA */}
+
         {renderTituloSecao('SÉRIES EM ALTA')}
         {renderMidias(series, 'serie')}
+
+        {/* CONEXÕES */}
 
         {renderTituloSecao('CONEXÕES')}
 
@@ -604,6 +1575,9 @@ export default function Home({
                 <TouchableOpacity
                   key={pessoa.id || i}
                   style={styles.friend}
+                  onPress={() =>
+                    abrirAba('Perfil', onAbrirPerfil)
+                  }
                 >
                   <View style={styles.friendAvatar}>
                     {foto ? (
@@ -634,12 +1608,50 @@ export default function Home({
           </Text>
         )}
 
+        {/* ATIVIDADE RECENTE */}
+
         {renderTituloSecao('ATIVIDADE RECENTE')}
 
-        {atividades.length ? (
-          atividades.slice(0, 5).map((item, i) => (
+        {registros.length ? (
+          registros.slice(0, 5).map((item, index) => (
+            <TouchableOpacity
+              key={`atividade-${item.tipo}-${item.id || index}`}
+              activeOpacity={0.85}
+              style={styles.activityCard}
+              onPress={() => abrirMidia(item)}
+            >
+              <View style={styles.activityIcon}>
+                <Feather
+                  name="activity"
+                  size={17}
+                  color={COLORS.blueLight}
+                />
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.activityText}>
+                  Você avaliou {item.title || 'uma produção'}
+                </Text>
+
+                <Text style={styles.recordDate}>
+                  {formatarData(
+                    item.data ||
+                    item.atualizado_em
+                  )}
+                </Text>
+              </View>
+
+              <Feather
+                name="chevron-right"
+                size={16}
+                color={COLORS.muted}
+              />
+            </TouchableOpacity>
+          ))
+        ) : atividadesUsuario.length ? (
+          atividadesUsuario.slice(0, 5).map((item, index) => (
             <View
-              key={item.id || i}
+              key={item.id || index}
               style={styles.activityCard}
             >
               <View style={styles.activityIcon}>
@@ -672,9 +1684,16 @@ export default function Home({
           </Text>
         )}
 
+        {/* ÚLTIMOS REGISTROS */}
+
         {renderTituloSecao('ÚLTIMOS REGISTROS')}
 
-        {registros.length ? (
+        {carregandoDiario ? (
+          <ActivityIndicator
+            color={COLORS.blue}
+            style={{ marginVertical: 20 }}
+          />
+        ) : registros.length ? (
           registros.slice(0, 5).map(renderRegistro)
         ) : (
           <View style={styles.emptyCard}>
@@ -689,20 +1708,216 @@ export default function Home({
             </Text>
 
             <Text style={styles.emptyText}>
-              Quando você registrar um filme ou série, ele aparecerá aqui.
+              Quando você avaliar um filme ou uma série, ele aparecerá aqui.
             </Text>
+
+            <TouchableOpacity
+              style={styles.emptyButton}
+              onPress={onAdicionar}
+            >
+              <Feather
+                name="plus"
+                size={15}
+                color="#FFFFFF"
+              />
+
+              <Text style={styles.emptyButtonText}>
+                Adicionar produção
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
         <View style={{ height: 112 }} />
       </Animated.ScrollView>
 
-      {/* NAVEGAÇÃO INFERIOR */}
+      {/* ======================================================
+          MODAL DO DIÁRIO
+      ====================================================== */}
+
+      <Modal
+        visible={Boolean(listaAberta)}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={fecharLista}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            {/* CABEÇALHO */}
+
+            <View style={styles.modalHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalEyebrow}>
+                  CINETRACK · MEU DIÁRIO
+                </Text>
+
+                <Text style={styles.modalTitle}>
+                  {tituloDaLista}
+                </Text>
+
+                <Text style={styles.modalSubtitle}>
+                  {midiasDaLista.length}{' '}
+                  {midiasDaLista.length === 1
+                    ? 'produção encontrada'
+                    : 'produções encontradas'}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.modalClose}
+                onPress={fecharLista}
+                activeOpacity={0.8}
+              >
+                <Feather
+                  name="x"
+                  size={21}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.modalDivider} />
+
+            {/* CONTEÚDO */}
+
+            {carregandoDiario ? (
+              <ActivityIndicator
+                size="large"
+                color={COLORS.blueLight}
+                style={{ marginVertical: 35 }}
+              />
+            ) : midiasDaLista.length ? (
+              <ScrollView
+                style={styles.modalScroll}
+                contentContainerStyle={styles.modalList}
+                showsVerticalScrollIndicator={false}
+              >
+                {midiasDaLista.map((item, index) => {
+                  const titulo =
+                    item.title ||
+                    item.titulo ||
+                    'Obra sem título';
+
+                  const imagem = obterImagem(
+                    item.poster_path ||
+                    item.poster ||
+                    item.poster_url
+                  );
+
+                  return (
+                    <TouchableOpacity
+                      key={`${item.tipo}-${item.id}-${index}`}
+                      activeOpacity={0.8}
+                      style={styles.modalItem}
+                      onPress={() => {
+                        fecharLista();
+                        abrirMidia(item);
+                      }}
+                    >
+                      {imagem ? (
+                        <Image
+                          source={{ uri: imagem }}
+                          style={styles.modalPoster}
+                        />
+                      ) : (
+                        <View
+                          style={[
+                            styles.modalPoster,
+                            styles.posterPlaceholder,
+                          ]}
+                        >
+                          <Ionicons
+                            name={
+                              item.tipo === 'tv'
+                                ? 'tv-outline'
+                                : 'film-outline'
+                            }
+                            size={25}
+                            color={COLORS.muted}
+                          />
+                        </View>
+                      )}
+
+                      <View style={styles.modalInfo}>
+                        <Text
+                          style={styles.modalItemTitle}
+                          numberOfLines={2}
+                        >
+                          {titulo}
+                        </Text>
+
+                        <Text style={styles.modalItemType}>
+                          {item.tipo === 'tv' ? 'SÉRIE' : 'FILME'}
+                        </Text>
+
+                        <View style={styles.modalRatingRow}>
+                          <AntDesign
+                            name="star"
+                            size={13}
+                            color={COLORS.yellow}
+                          />
+
+                          <Text style={styles.modalRating}>
+                            {item.nota ?? item.rating ?? '—'} / 5
+                          </Text>
+                        </View>
+
+                        <Text style={styles.modalItemDate}>
+                          {formatarData(
+                            item.data ||
+                            item.atualizado_em
+                          )}
+                        </Text>
+                      </View>
+
+                      <Feather
+                        name="chevron-right"
+                        size={18}
+                        color={COLORS.muted}
+                      />
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            ) : (
+              <View style={styles.modalEmpty}>
+                <Feather
+                  name="film"
+                  size={35}
+                  color={COLORS.muted}
+                />
+
+                <Text style={styles.modalEmptyTitle}>
+                  Nenhuma produção encontrada
+                </Text>
+
+                <Text style={styles.modalEmptyText}>
+                  As obras que você avaliar aparecerão nesta lista.
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.modalFooterButton}
+              onPress={fecharLista}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.modalFooterText}>
+                Fechar
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MENU INFERIOR */}
 
       <View style={styles.tabBar}>
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() => abrirAba('Home')}
+          activeOpacity={0.8}
         >
           <Ionicons
             name="home"
@@ -713,6 +1928,7 @@ export default function Home({
                 : COLORS.muted
             }
           />
+
           <Text
             style={[
               styles.tabLabel,
@@ -723,11 +1939,12 @@ export default function Home({
           </Text>
         </TouchableOpacity>
 
+        {/* BUSCAR */}
+
         <TouchableOpacity
           style={styles.tabItem}
-          onPress={() =>
-            abrirAba('Buscar', onAbrirBusca)
-          }
+          onPress={() => abrirAba('Buscar')}
+          activeOpacity={0.8}
         >
           <Feather
             name="search"
@@ -738,6 +1955,7 @@ export default function Home({
                 : COLORS.muted
             }
           />
+
           <Text
             style={[
               styles.tabLabel,
@@ -748,14 +1966,18 @@ export default function Home({
           </Text>
         </TouchableOpacity>
 
+        {/* ADICIONAR */}
+
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() =>
-            abrirAba('Adicionar', onAdicionar)
-          }
+          onPress={onAdicionar}
+          activeOpacity={0.85}
         >
           <LinearGradient
-            colors={['#3984FF', '#2563EB']}
+            colors={[
+              '#3984FF',
+              '#2563EB',
+            ]}
             style={styles.addButtonGradient}
           >
             <Feather
@@ -766,11 +1988,14 @@ export default function Home({
           </LinearGradient>
         </TouchableOpacity>
 
+        {/* DIÁRIO */}
+
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() =>
             abrirAba('Diário', onAbrirDiario)
           }
+          activeOpacity={0.8}
         >
           <MaterialCommunityIcons
             name="notebook-outline"
@@ -781,6 +2006,7 @@ export default function Home({
                 : COLORS.muted
             }
           />
+
           <Text
             style={[
               styles.tabLabel,
@@ -791,11 +2017,17 @@ export default function Home({
           </Text>
         </TouchableOpacity>
 
+        {/* PERFIL */}
+
         <TouchableOpacity
           style={styles.tabItem}
           onPress={() =>
-            abrirAba('Perfil', onAbrirPerfil || onLogout)
+            abrirAba(
+              'Perfil',
+              onAbrirPerfil || onLogout
+            )
           }
+          activeOpacity={0.8}
         >
           <Feather
             name="user"
@@ -806,6 +2038,7 @@ export default function Home({
                 : COLORS.muted
             }
           />
+
           <Text
             style={[
               styles.tabLabel,
@@ -820,6 +2053,10 @@ export default function Home({
   );
 }
 
+// ============================================================
+// ESTILOS
+// ============================================================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -829,8 +2066,6 @@ const styles = StyleSheet.create({
         ? StatusBar.currentHeight || 24
         : 0,
   },
-
-  // CABEÇALHO REORGANIZADO
 
   header: {
     minHeight: 76,
@@ -998,6 +2233,8 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.border,
   },
 
+  // DESTAQUE
+
   heroCard: {
     minHeight: 185,
     borderRadius: 20,
@@ -1062,6 +2299,8 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 
+  // ESTATÍSTICAS
+
   statsGrid: {
     flexDirection: 'row',
     gap: 9,
@@ -1069,8 +2308,8 @@ const styles = StyleSheet.create({
 
   statCard: {
     flex: 1,
-    minHeight: 116,
-    padding: 12,
+    minHeight: 122,
+    padding: 11,
     borderRadius: 16,
     backgroundColor: COLORS.elevated,
     borderWidth: 1,
@@ -1085,17 +2324,26 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
-  statLabel: {
-    color: COLORS.text,
-    fontSize: 11,
-    fontWeight: '700',
-    marginTop: 1,
+  statNumberHoras: {
+    color: '#fff',
+    fontSize: 21,
+    fontWeight: '900',
+    marginTop: 8,
   },
 
-  statSub: {
-    color: COLORS.muted,
+  statLabel: {
+    color: COLORS.text,
     fontSize: 10,
-    marginTop: 2,
+    fontWeight: '700',
+    marginTop: 3,
+    minHeight: 24,
+  },
+
+  statVerTexto: {
+    color: COLORS.blueLight,
+    fontSize: 9,
+    fontWeight: '800',
+    marginTop: 7,
   },
 
   statLine: {
@@ -1106,6 +2354,8 @@ const styles = StyleSheet.create({
     height: 2,
     borderRadius: 2,
   },
+
+  // CATÁLOGO
 
   horizontalList: {
     gap: 12,
@@ -1180,6 +2430,8 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
 
+  // CONEXÕES
+
   friend: {
     width: 62,
     alignItems: 'center',
@@ -1210,6 +2462,8 @@ const styles = StyleSheet.create({
     maxWidth: 62,
   },
 
+  // ATIVIDADES
+
   activityCard: {
     flexDirection: 'row',
     gap: 12,
@@ -1237,6 +2491,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  // REGISTROS
+
   recordCard: {
     flexDirection: 'row',
     gap: 12,
@@ -1246,6 +2502,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     marginBottom: 9,
+    alignItems: 'center',
   },
 
   recordPoster: {
@@ -1279,18 +2536,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  recordDescription: {
-    color: COLORS.secondary,
-    fontSize: 11,
+  recordType: {
+    color: COLORS.blueLight,
+    fontSize: 9,
+    fontWeight: '800',
     marginTop: 5,
+    letterSpacing: 0.7,
   },
 
-  recordReview: {
-    color: COLORS.secondary,
-    fontSize: 11,
-    lineHeight: 16,
-    marginTop: 5,
-  },
+  // ESTADO VAZIO
 
   emptyCard: {
     alignItems: 'center',
@@ -1308,6 +2562,197 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
   },
+
+  emptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    backgroundColor: COLORS.blue,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 11,
+    marginTop: 7,
+  },
+
+  emptyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  // MODAL
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 35,
+  },
+
+  modalContainer: {
+    width: '100%',
+    maxHeight: '90%',
+    backgroundColor: '#0D111A',
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.18)',
+    padding: 18,
+    overflow: 'hidden',
+  },
+
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingBottom: 13,
+  },
+
+  modalEyebrow: {
+    color: COLORS.blueLight,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.6,
+  },
+
+  modalTitle: {
+    color: '#FFFFFF',
+    fontSize: 19,
+    fontWeight: '900',
+    marginTop: 5,
+  },
+
+  modalSubtitle: {
+    color: COLORS.secondary,
+    fontSize: 11,
+    marginTop: 4,
+  },
+
+  modalClose: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: COLORS.elevated,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  modalDivider: {
+    width: '100%',
+    height: 1,
+    backgroundColor: COLORS.border,
+    marginBottom: 13,
+  },
+
+  modalScroll: {
+    flexGrow: 0,
+  },
+
+  modalList: {
+    paddingBottom: 8,
+    gap: 10,
+  },
+
+  modalItem: {
+    minHeight: 105,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 10,
+    backgroundColor: COLORS.elevated,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+
+  modalPoster: {
+    width: 62,
+    height: 88,
+    borderRadius: 9,
+    backgroundColor: COLORS.surface,
+  },
+
+  modalInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+
+  modalItemTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
+
+  modalItemType: {
+    color: COLORS.blueLight,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.1,
+    marginTop: 5,
+  },
+
+  modalRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 6,
+  },
+
+  modalRating: {
+    color: COLORS.yellow,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+
+  modalItemDate: {
+    color: COLORS.muted,
+    fontSize: 10,
+    marginTop: 5,
+  },
+
+  modalEmpty: {
+    alignItems: 'center',
+    paddingVertical: 35,
+    paddingHorizontal: 15,
+    gap: 9,
+  },
+
+  modalEmptyTitle: {
+    color: COLORS.text,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+
+  modalEmptyText: {
+    color: COLORS.secondary,
+    fontSize: 11,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
+
+  modalFooterButton: {
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#172338',
+    borderRadius: 12,
+    marginTop: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(96,165,250,0.17)',
+  },
+
+  modalFooterText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  // MENU INFERIOR
 
   tabBar: {
     position: 'absolute',

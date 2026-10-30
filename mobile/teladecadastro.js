@@ -29,7 +29,7 @@ const LOGO_CINETRACK = require('./assets/logo-cinetrack.png');
 // Endereço da API PHP
 // Endereço da API PHP
 const API_CADASTRO =
-  'https://outlets-univ-dirt-shorts.trycloudflare.com/TCC/TCC/api/cadastro.php';
+  'https://reynolds-christ-while-take.trycloudflare.com/TCC/TCC/api/cadastro.php';
 export default function TelaCadastro({
   onVoltar,
   onEntrar,

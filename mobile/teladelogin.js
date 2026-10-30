@@ -20,7 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // API oficial de login do CineTrack
 const API_URL =
-  'https://outlets-univ-dirt-shorts.trycloudflare.com/TCC/TCC/api/login.php';
+  'https://reynolds-christ-while-take.trycloudflare.com/TCC/TCC/api/login.php';
 
 export default function TelaLogin({
   onVoltar,

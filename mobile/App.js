@@ -27,6 +27,9 @@ import TelaLogin from './teladelogin';
 import TelaCadastro from './teladecadastro';
 import EscolhaGeneros from './escolhageneros';
 import Home from './home';
+import Detalhes from './detalhes';
+import NovoRegistro from './novoregistro';
+import Diario from './diario';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -60,19 +63,72 @@ const TITULOS_FALLBACK = [
 
 export default function App() {
   const [telaAtual, setTelaAtual] = useState('HomeLanding');
+
   const [usuarioAtual, setUsuarioAtual] = useState(null);
   const [verificandoSessao, setVerificandoSessao] = useState(true);
 
   const [filmes, setFilmes] = useState([]);
   const [carregandoFilmes, setCarregandoFilmes] = useState(true);
 
+  const [midiaSelecionada, setMidiaSelecionada] = useState(null);
+
+  // Mantém a tela de origem dos detalhes.
+  const [telaAnteriorDetalhes, setTelaAnteriorDetalhes] = useState('Home');
+
+  // Animações da landing page.
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoAnim = useRef(new Animated.Value(0.92)).current;
+
   const cardLeftAnim = useRef(new Animated.Value(24)).current;
   const cardCenterAnim = useRef(new Animated.Value(38)).current;
   const cardRightAnim = useRef(new Animated.Value(24)).current;
 
-  // Recupera a sessão salva.
+  // ==========================================================
+  // NORMALIZAR MÍDIA
+  // ==========================================================
+
+  const normalizarMidia = midia => {
+    if (
+      !midia ||
+      midia.id === undefined ||
+      midia.id === null ||
+      midia.id === ''
+    ) {
+      return null;
+    }
+
+    /*
+      O TMDB pode retornar o tipo como:
+      - tipo: 'movie' ou 'tv'
+      - media_type: 'movie' ou 'tv'
+
+      Também usamos os campos title/name como alternativa.
+    */
+
+    let tipo = midia.tipo || midia.media_type;
+
+    if (!tipo) {
+      tipo =
+        midia.name || midia.first_air_date
+          ? 'tv'
+          : 'movie';
+    }
+
+    if (tipo !== 'movie' && tipo !== 'tv') {
+      console.warn('Tipo de mídia inválido:', tipo);
+      return null;
+    }
+
+    return {
+      ...midia,
+      tipo,
+    };
+  };
+
+  // ==========================================================
+  // RECUPERAR SESSÃO
+  // ==========================================================
+
   useEffect(() => {
     let ativo = true;
 
@@ -85,7 +141,11 @@ export default function App() {
         if (usuarioSalvo) {
           const usuario = JSON.parse(usuarioSalvo);
 
-          if (usuario && (usuario.id || usuario.email)) {
+          if (
+            usuario &&
+            typeof usuario === 'object' &&
+            (usuario.id || usuario.email)
+          ) {
             setUsuarioAtual(usuario);
             setTelaAtual('Home');
           } else {
@@ -93,12 +153,18 @@ export default function App() {
           }
         }
       } catch (erro) {
-        console.warn('Não foi possível recuperar a sessão:', erro);
+        console.warn(
+          'Não foi possível recuperar a sessão:',
+          erro
+        );
 
         try {
           await AsyncStorage.removeItem(CHAVE_SESSAO);
         } catch (erroStorage) {
-          console.warn('Erro ao limpar sessão:', erroStorage);
+          console.warn(
+            'Erro ao limpar sessão:',
+            erroStorage
+          );
         }
       } finally {
         if (ativo) {
@@ -114,11 +180,20 @@ export default function App() {
     };
   }, []);
 
-  // Salva o usuário que acabou de entrar.
-  const salvarSessao = async (usuario) => {
+  // ==========================================================
+  // SALVAR SESSÃO
+  // ==========================================================
+
+  const salvarSessao = async usuario => {
     try {
-      if (!usuario) {
-        throw new Error('Os dados do usuário não foram recebidos.');
+      if (
+        !usuario ||
+        typeof usuario !== 'object' ||
+        (!usuario.id && !usuario.email)
+      ) {
+        throw new Error(
+          'Os dados do usuário não foram recebidos corretamente.'
+        );
       }
 
       await AsyncStorage.setItem(
@@ -127,13 +202,18 @@ export default function App() {
       );
 
       setUsuarioAtual(usuario);
+      setTelaAnteriorDetalhes('Home');
+      setMidiaSelecionada(null);
       setTelaAtual('Home');
     } catch (erro) {
       console.error('Erro ao salvar sessão:', erro);
     }
   };
 
-  // Encerra a sessão e limpa os dados da conta atual.
+  // ==========================================================
+  // ENCERRAR SESSÃO
+  // ==========================================================
+
   const encerrarSessao = async () => {
     try {
       await AsyncStorage.removeItem(CHAVE_SESSAO);
@@ -141,11 +221,76 @@ export default function App() {
       console.warn('Erro ao encerrar sessão:', erro);
     } finally {
       setUsuarioAtual(null);
+      setMidiaSelecionada(null);
+      setTelaAnteriorDetalhes('Home');
       setTelaAtual('HomeLanding');
     }
   };
 
-  // Carrega os filmes da landing page.
+  // ==========================================================
+  // ABRIR DIÁRIO
+  // ==========================================================
+
+  const abrirDiario = () => {
+    setTelaAtual('Diario');
+  };
+
+  // ==========================================================
+  // ABRIR DETALHES
+  // ==========================================================
+
+  const abrirDetalhes = (midia, telaDeOrigem = 'Home') => {
+    const midiaNormalizada = normalizarMidia(midia);
+
+    if (!midiaNormalizada) {
+      console.warn(
+        'Não foi possível abrir os detalhes. Mídia inválida:',
+        midia
+      );
+      return;
+    }
+
+    /*
+      Guardamos a origem para que o botão voltar funcione corretamente.
+
+      Os detalhes podem ser abertos a partir de:
+      - Home
+      - NovoRegistro
+      - Diario
+
+      Assim, ao voltar dos detalhes, o usuário retorna
+      exatamente para a tela de onde veio.
+    */
+
+    const origensPermitidas = [
+      'NovoRegistro',
+      'Diario',
+    ];
+
+    const origem = origensPermitidas.includes(telaDeOrigem)
+      ? telaDeOrigem
+      : 'Home';
+
+    setMidiaSelecionada(midiaNormalizada);
+    setTelaAnteriorDetalhes(origem);
+    setTelaAtual('Detalhes');
+  };
+
+  // ==========================================================
+  // VOLTAR DOS DETALHES
+  // ==========================================================
+
+  const voltarDaTelaDetalhes = () => {
+    const telaDestino = telaAnteriorDetalhes || 'Home';
+
+    setMidiaSelecionada(null);
+    setTelaAtual(telaDestino);
+  };
+
+  // ==========================================================
+  // CARREGAR FILMES DA TELA INICIAL
+  // ==========================================================
+
   useEffect(() => {
     if (telaAtual !== 'HomeLanding') return;
 
@@ -155,14 +300,17 @@ export default function App() {
       setCarregandoFilmes(true);
 
       try {
-        const TMDB_KEY = '5c1853c10d9752023da5ddce4ada3b77';
+        const TMDB_KEY =
+          '5c1853c10d9752023da5ddce4ada3b77';
 
         const resposta = await fetch(
           `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&language=pt-BR&page=1`
         );
 
         if (!resposta.ok) {
-          throw new Error('Não foi possível carregar os filmes.');
+          throw new Error(
+            'Não foi possível carregar os filmes.'
+          );
         }
 
         const dados = await resposta.json();
@@ -171,7 +319,10 @@ export default function App() {
           setFilmes(dados.results.slice(0, 3));
         }
       } catch (erro) {
-        console.warn('Erro ao carregar filmes do TMDB:', erro);
+        console.warn(
+          'Erro ao carregar filmes do TMDB:',
+          erro
+        );
       } finally {
         if (ativo) {
           setCarregandoFilmes(false);
@@ -186,12 +337,16 @@ export default function App() {
     };
   }, [telaAtual]);
 
-  // Animações da landing page.
+  // ==========================================================
+  // ANIMAÇÕES DA TELA INICIAL
+  // ==========================================================
+
   useEffect(() => {
     if (telaAtual !== 'HomeLanding') return;
 
     fadeAnim.setValue(0);
     logoAnim.setValue(0.92);
+
     cardLeftAnim.setValue(24);
     cardCenterAnim.setValue(38);
     cardRightAnim.setValue(24);
@@ -240,6 +395,10 @@ export default function App() {
     cardRightAnim,
   ]);
 
+  // ==========================================================
+  // CARREGAMENTO DA SESSÃO
+  // ==========================================================
+
   if (verificandoSessao) {
     return (
       <SafeAreaView
@@ -271,15 +430,22 @@ export default function App() {
     );
   }
 
-  // Cadastro.
+  // ==========================================================
+  // CADASTRO
+  // ==========================================================
+
   if (telaAtual === 'Cadastro') {
     return (
       <TelaCadastro
         onVoltar={() => setTelaAtual('HomeLanding')}
         onEntrar={() => setTelaAtual('Login')}
-        onCadastroSucesso={async (usuario) => {
+        onCadastroSucesso={async usuario => {
           try {
-            if (usuario) {
+            if (
+              usuario &&
+              typeof usuario === 'object' &&
+              (usuario.id || usuario.email)
+            ) {
               await AsyncStorage.setItem(
                 CHAVE_SESSAO,
                 JSON.stringify(usuario)
@@ -288,7 +454,10 @@ export default function App() {
               setUsuarioAtual(usuario);
             }
           } catch (erro) {
-            console.warn('Erro ao salvar cadastro:', erro);
+            console.warn(
+              'Erro ao salvar cadastro:',
+              erro
+            );
           }
 
           setTelaAtual('Generos');
@@ -297,7 +466,10 @@ export default function App() {
     );
   }
 
-  // Login.
+  // ==========================================================
+  // LOGIN
+  // ==========================================================
+
   if (telaAtual === 'Login') {
     return (
       <TelaLogin
@@ -307,7 +479,10 @@ export default function App() {
     );
   }
 
-  // Escolha de gêneros.
+  // ==========================================================
+  // ESCOLHA DE GÊNEROS
+  // ==========================================================
+
   if (telaAtual === 'Generos') {
     return (
       <EscolhaGeneros
@@ -317,15 +492,102 @@ export default function App() {
     );
   }
 
-  // Home personalizada com os dados da conta conectada.
+  // ==========================================================
+  // DETALHES DE FILMES E SÉRIES
+  // ==========================================================
+
+  if (
+    telaAtual === 'Detalhes' &&
+    midiaSelecionada
+  ) {
+    return (
+      <Detalhes
+        midia={midiaSelecionada}
+        onVoltar={voltarDaTelaDetalhes}
+      />
+    );
+  }
+
+  // ==========================================================
+  // NOVO REGISTRO
+  // ==========================================================
+
+  if (telaAtual === 'NovoRegistro') {
+    return (
+      <NovoRegistro
+        onVoltar={() => {
+          setTelaAtual('Home');
+        }}
+        onAbrirDetalhes={midia => {
+          abrirDetalhes(midia, 'NovoRegistro');
+        }}
+      />
+    );
+  }
+
+  // ==========================================================
+  // DIÁRIO
+  // ==========================================================
+
+  if (telaAtual === 'Diario') {
+    return (
+      <Diario
+        usuario={usuarioAtual}
+
+        // As atividades reais dos amigos serão recebidas
+        // aqui quando o feed social do backend estiver conectado.
+        atividadesAmigos={[]}
+
+        // Retorna para a Home.
+        onAbrirHome={() => {
+          setTelaAtual('Home');
+        }}
+
+        onVoltar={() => {
+          setTelaAtual('Home');
+        }}
+
+        // Permite abrir a tela de registro pelo Diário.
+        onAdicionar={() => {
+          setTelaAtual('NovoRegistro');
+        }}
+
+        // Abre os detalhes de uma obra e registra
+        // o Diário como tela de origem.
+        onAbrirDetalhes={midia => {
+          abrirDetalhes(midia, 'Diario');
+        }}
+      />
+    );
+  }
+
+  // ==========================================================
+  // HOME
+  // ==========================================================
+
   if (telaAtual === 'Home') {
     return (
       <Home
         usuario={usuarioAtual}
         onLogout={encerrarSessao}
+
+        onAbrirDetalhes={midia => {
+          abrirDetalhes(midia, 'Home');
+        }}
+
+        onAdicionar={() => {
+          setTelaAtual('NovoRegistro');
+        }}
+
+        // Integra a aba Diário da navegação inferior da Home.
+        onAbrirDiario={abrirDiario}
       />
     );
   }
+
+  // ==========================================================
+  // FUNÇÕES DA LANDING PAGE
+  // ==========================================================
 
   const obterPoster = (filme, indice) => {
     if (filme?.poster_path) {
@@ -344,15 +606,25 @@ export default function App() {
     return TITULOS_FALLBACK[indice];
   };
 
-  const abrirLink = async (url) => {
+  const abrirLink = async url => {
     try {
       await Linking.openURL(url);
     } catch (erro) {
-      console.warn('Não foi possível abrir o link.', erro);
+      console.warn(
+        'Não foi possível abrir o link:',
+        erro
+      );
     }
   };
 
-  const renderEstrelas = (quantidade = 5, tamanho = 12) => (
+  // ==========================================================
+  // ESTRELAS
+  // ==========================================================
+
+  const renderEstrelas = (
+    quantidade = 5,
+    tamanho = 12
+  ) => (
     <View style={styles.estrelas}>
       {Array.from({ length: 5 }, (_, indice) => (
         <Ionicons
@@ -373,6 +645,10 @@ export default function App() {
       ))}
     </View>
   );
+
+  // ==========================================================
+  // ONDA SONORA
+  // ==========================================================
 
   const renderOndaSonora = () => {
     const alturas = [8, 15, 10, 21, 13, 17, 7];
@@ -396,6 +672,10 @@ export default function App() {
     );
   };
 
+  // ==========================================================
+  // CARD DE FILME
+  // ==========================================================
+
   const renderCardFilme = ({
     filme,
     indice,
@@ -404,6 +684,18 @@ export default function App() {
   }) => {
     const central = tipo === 'central';
 
+    /*
+      A rotação e a animação vertical ficam juntas.
+      Isso evita que uma transformação sobrescreva a outra.
+    */
+
+    const rotacao =
+      tipo === 'esquerda'
+        ? [{ rotate: '-3deg' }]
+        : tipo === 'direita'
+          ? [{ rotate: '3deg' }]
+          : [];
+
     return (
       <Animated.View
         style={[
@@ -411,15 +703,19 @@ export default function App() {
           central
             ? styles.cardCentral
             : styles.cardLateral,
-          tipo === 'esquerda' && styles.cardEsquerdo,
-          tipo === 'direita' && styles.cardDireito,
+          tipo === 'esquerda' &&
+            styles.cardEsquerdo,
+          tipo === 'direita' &&
+            styles.cardDireito,
           {
             opacity: animacao.interpolate({
               inputRange: [0, 38],
               outputRange: [1, 0.55],
               extrapolate: 'clamp',
             }),
+
             transform: [
+              ...rotacao,
               { translateY: animacao },
             ],
           },
@@ -457,11 +753,19 @@ export default function App() {
     );
   };
 
+  // ==========================================================
+  // FILMES EXIBIDOS
+  // ==========================================================
+
   const filmesExibidos = [
     filmes[0] || null,
     filmes[1] || null,
     filmes[2] || null,
   ];
+
+  // ==========================================================
+  // TELA INICIAL
+  // ==========================================================
 
   return (
     <SafeAreaView style={styles.container}>
@@ -476,7 +780,7 @@ export default function App() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.conteudo}
       >
-        {/* CARROSSEL DE FILMES */}
+        {/* DESTAQUES */}
 
         <View style={styles.secaoDestaques}>
           <View style={styles.carrossel}>
@@ -516,14 +820,16 @@ export default function App() {
           )}
         </View>
 
-        {/* IDENTIDADE VISUAL */}
+        {/* MARCA */}
 
         <Animated.View
           style={[
             styles.secaoMarca,
             {
               opacity: fadeAnim,
-              transform: [{ scale: logoAnim }],
+              transform: [
+                { scale: logoAnim },
+              ],
             },
           ]}
         >
@@ -561,7 +867,8 @@ export default function App() {
             <Text style={styles.descricaoDestaque}>
               diário audiovisual
             </Text>{' '}
-            com a trilha sonora das obras que você ama — tudo em um só lugar.
+            com a trilha sonora das obras que você ama
+            — tudo em um só lugar.
           </Text>
         </Animated.View>
 
@@ -579,6 +886,7 @@ export default function App() {
               size={16}
               color={CORES.azulClaro}
             />
+
             <Text style={styles.textoRecurso}>
               Filmes & Séries
             </Text>
@@ -590,6 +898,7 @@ export default function App() {
               size={16}
               color="#38BDF8"
             />
+
             <Text style={styles.textoRecurso}>
               Trilha via Spotify
             </Text>
@@ -601,13 +910,14 @@ export default function App() {
               size={16}
               color="#A5B4FC"
             />
+
             <Text style={styles.textoRecurso}>
               Conexões
             </Text>
           </View>
         </Animated.View>
 
-        {/* AÇÕES PRINCIPAIS */}
+        {/* AÇÕES */}
 
         <Animated.View
           style={[
@@ -638,6 +948,8 @@ export default function App() {
             />
           </TouchableOpacity>
 
+          {/* DIVISOR */}
+
           <View style={styles.divisorSocial}>
             <View style={styles.linhaDivisor} />
 
@@ -648,6 +960,8 @@ export default function App() {
             <View style={styles.linhaDivisor} />
           </View>
 
+          {/* REDES SOCIAIS */}
+
           <View style={styles.linhaSocial}>
             <TouchableOpacity
               style={styles.botaoSocial}
@@ -655,7 +969,6 @@ export default function App() {
               onPress={() =>
                 abrirLink('https://www.instagram.com/')
               }
-              accessibilityRole="button"
             >
               <Ionicons
                 name="logo-instagram"
@@ -674,7 +987,6 @@ export default function App() {
               onPress={() =>
                 abrirLink('https://x.com/')
               }
-              accessibilityRole="button"
             >
               <Ionicons
                 name="logo-x"
@@ -688,11 +1000,12 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
+          {/* ENTRAR */}
+
           <TouchableOpacity
             style={styles.botaoEntrar}
             activeOpacity={0.8}
             onPress={() => setTelaAtual('Login')}
-            accessibilityRole="button"
           >
             <Text style={styles.textoEntrar}>
               Já tenho uma conta —{' '}
@@ -701,6 +1014,8 @@ export default function App() {
               </Text>
             </Text>
           </TouchableOpacity>
+
+          {/* TERMOS */}
 
           <Text style={styles.termos}>
             Ao criar uma conta, você aceita nossos{' '}
@@ -714,6 +1029,8 @@ export default function App() {
           </Text>
         </Animated.View>
 
+        {/* RODAPÉ */}
+
         <View style={styles.rodape}>
           <View style={styles.pontoRodape} />
 
@@ -726,6 +1043,10 @@ export default function App() {
   );
 }
 
+// ============================================================
+// DIMENSÕES DOS CARDS
+// ============================================================
+
 const CARD_LATERAL = Math.min(
   132,
   SCREEN_WIDTH * 0.30
@@ -735,6 +1056,10 @@ const CARD_CENTRAL = Math.min(
   190,
   SCREEN_WIDTH * 0.43
 );
+
+// ============================================================
+// ESTILOS
+// ============================================================
 
 const styles = StyleSheet.create({
   container: {
@@ -770,6 +1095,8 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
 
+  // DESTAQUES
+
   secaoDestaques: {
     height: 320,
     width: '100%',
@@ -799,6 +1126,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
+  // CARDS
+
   cardFilme: {
     overflow: 'hidden',
     borderRadius: 20,
@@ -806,7 +1135,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: CORES.borda,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 12 },
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
     shadowOpacity: 0.34,
     shadowRadius: 14,
     elevation: 9,
@@ -826,7 +1158,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: CORES.azul,
     shadowColor: CORES.azul,
-    shadowOffset: { width: 0, height: 8 },
+    shadowOffset: {
+      width: 0,
+      height: 8,
+    },
     shadowOpacity: 0.23,
     shadowRadius: 13,
     elevation: 13,
@@ -834,12 +1169,10 @@ const styles = StyleSheet.create({
 
   cardEsquerdo: {
     marginRight: -3,
-    transform: [{ rotate: '-3deg' }],
   },
 
   cardDireito: {
     marginLeft: -3,
-    transform: [{ rotate: '3deg' }],
   },
 
   poster: {
@@ -906,6 +1239,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
 
+  // MARCA
+
   secaoMarca: {
     alignItems: 'center',
     marginTop: 14,
@@ -945,6 +1280,8 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
 
+  // DESCRIÇÃO
+
   secaoDescricao: {
     paddingHorizontal: 24,
     marginTop: 22,
@@ -961,6 +1298,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
   },
+
+  // RECURSOS
 
   recursos: {
     flexDirection: 'row',
@@ -991,6 +1330,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  // AÇÕES
+
   acoes: {
     width: '100%',
     alignItems: 'center',
@@ -1011,7 +1352,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(147,197,253,0.40)',
     shadowColor: CORES.azul,
-    shadowOffset: { width: 0, height: 7 },
+    shadowOffset: {
+      width: 0,
+      height: 7,
+    },
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 7,
@@ -1022,6 +1366,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
+
+  // DIVISOR SOCIAL
 
   divisorSocial: {
     width: '100%',
@@ -1043,6 +1389,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
+
+  // REDES SOCIAIS
 
   linhaSocial: {
     width: '100%',
@@ -1069,6 +1417,8 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
+  // ENTRAR
+
   botaoEntrar: {
     width: '100%',
     minHeight: 50,
@@ -1092,6 +1442,8 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
+  // TERMOS
+
   termos: {
     color: '#77869D',
     textAlign: 'center',
@@ -1105,6 +1457,8 @@ const styles = StyleSheet.create({
     color: '#93C5FD',
     fontWeight: '800',
   },
+
+  // RODAPÉ
 
   rodape: {
     flexDirection: 'row',
