@@ -33,6 +33,7 @@ import {
 
 import Buscar from './buscar';
 import { lerListas } from './listasStorage';
+import { API_URL } from './apiConfig';
 
 // ============================================================
 // CONFIGURAÇÕES
@@ -49,13 +50,7 @@ const CHAVE_REGISTROS = '@CineTrack:registros';
 const CHAVE_MINHA_LISTA = '@CineTrack:minhaLista';
 const CHAVE_TOKEN = '@CineTrack:token';
 
-const API_BASE_URL = String(
-  process.env.EXPO_PUBLIC_API_URL || ''
-).replace(/\/+$/, '');
-
-const AVALIACOES_API_URL = API_BASE_URL
-  ? `${API_BASE_URL.endsWith('/api') ? API_BASE_URL : `${API_BASE_URL}/api`}/minhas_avaliacoes.php`
-  : '';
+const AVALIACOES_API_URL = `${API_URL}/minhas_avaliacoes.php`;
 
 const COLORS = {
   bg: '#050608',

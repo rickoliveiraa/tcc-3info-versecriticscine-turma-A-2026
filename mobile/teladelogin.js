@@ -17,10 +17,10 @@ import {
 
 import { Feather } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL } from './apiConfig';
+import { sincronizarDadosLocais } from './sincronizacao';
 
 // API oficial de login do CineTrack
-const API_URL =
-  'https://reynolds-christ-while-take.trycloudflare.com/TCC/TCC/api/login.php';
 
 export default function TelaLogin({
   onVoltar,
@@ -58,7 +58,7 @@ export default function TelaLogin({
       dadosFormulario.append('email', emailLimpo);
       dadosFormulario.append('senha', senha);
 
-      const resposta = await fetch(API_URL, {
+      const resposta = await fetch(`${API_URL}/login.php`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -96,10 +96,23 @@ export default function TelaLogin({
         );
       }
 
-      await AsyncStorage.setItem(
-        '@CineTrack:usuario',
-        JSON.stringify(usuario)
-      );
+      if (!dados.token) {
+        throw new Error('O servidor não retornou o token de acesso. Atualize a API PHP do CineTrack.');
+      }
+
+      await AsyncStorage.multiSet([
+        ['@CineTrack:usuario', JSON.stringify(usuario)],
+        ['@CineTrack:token', dados.token],
+      ]);
+
+      // Migra e atualiza os dados compartilhados sem bloquear o login.
+      // Se a conexão falhar, os dados locais permanecem intactos.
+      try {
+        const resultadoSync = await sincronizarDadosLocais();
+        console.log('CineTrack sincronizado:', resultadoSync);
+      } catch (erroSync) {
+        console.warn('Sincronização adiada; dados locais preservados:', erroSync?.message);
+      }
 
       console.log('Login realizado:', usuario.email);
 

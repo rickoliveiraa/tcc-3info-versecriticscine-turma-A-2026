@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import {
   StyleSheet,
   Text,
@@ -16,7 +15,6 @@ import {
   Animated,
   Linking,
 } from 'react-native';
-
 import {
   Ionicons,
   Feather,
@@ -30,9 +28,9 @@ import Home from './home';
 import Detalhes from './detalhes';
 import NovoRegistro from './novoregistro';
 import Diario from './diario';
+import Perfil from './perfil';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
 const CHAVE_SESSAO = '@CineTrack:usuario';
 
 const CORES = {
@@ -63,22 +61,15 @@ const TITULOS_FALLBACK = [
 
 export default function App() {
   const [telaAtual, setTelaAtual] = useState('HomeLanding');
-
   const [usuarioAtual, setUsuarioAtual] = useState(null);
   const [verificandoSessao, setVerificandoSessao] = useState(true);
-
   const [filmes, setFilmes] = useState([]);
   const [carregandoFilmes, setCarregandoFilmes] = useState(true);
-
   const [midiaSelecionada, setMidiaSelecionada] = useState(null);
-
-  // Mantém a tela de origem dos detalhes.
   const [telaAnteriorDetalhes, setTelaAnteriorDetalhes] = useState('Home');
 
-  // Animações da landing page.
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const logoAnim = useRef(new Animated.Value(0.92)).current;
-
   const cardLeftAnim = useRef(new Animated.Value(24)).current;
   const cardCenterAnim = useRef(new Animated.Value(38)).current;
   const cardRightAnim = useRef(new Animated.Value(24)).current;
@@ -96,14 +87,6 @@ export default function App() {
     ) {
       return null;
     }
-
-    /*
-      O TMDB pode retornar o tipo como:
-      - tipo: 'movie' ou 'tv'
-      - media_type: 'movie' ou 'tv'
-
-      Também usamos os campos title/name como alternativa.
-    */
 
     let tipo = midia.tipo || midia.media_type;
 
@@ -250,21 +233,10 @@ export default function App() {
       return;
     }
 
-    /*
-      Guardamos a origem para que o botão voltar funcione corretamente.
-
-      Os detalhes podem ser abertos a partir de:
-      - Home
-      - NovoRegistro
-      - Diario
-
-      Assim, ao voltar dos detalhes, o usuário retorna
-      exatamente para a tela de onde veio.
-    */
-
     const origensPermitidas = [
       'NovoRegistro',
       'Diario',
+      'Perfil',
     ];
 
     const origem = origensPermitidas.includes(telaDeOrigem)
@@ -346,7 +318,6 @@ export default function App() {
 
     fadeAnim.setValue(0);
     logoAnim.setValue(0.92);
-
     cardLeftAnim.setValue(24);
     cardCenterAnim.setValue(38);
     cardRightAnim.setValue(24);
@@ -533,30 +504,39 @@ export default function App() {
     return (
       <Diario
         usuario={usuarioAtual}
-
-        // As atividades reais dos amigos serão recebidas
-        // aqui quando o feed social do backend estiver conectado.
         atividadesAmigos={[]}
-
-        // Retorna para a Home.
         onAbrirHome={() => {
           setTelaAtual('Home');
         }}
-
         onVoltar={() => {
           setTelaAtual('Home');
         }}
-
-        // Permite abrir a tela de registro pelo Diário.
         onAdicionar={() => {
           setTelaAtual('NovoRegistro');
         }}
-
-        // Abre os detalhes de uma obra e registra
-        // o Diário como tela de origem.
         onAbrirDetalhes={midia => {
           abrirDetalhes(midia, 'Diario');
         }}
+      />
+    );
+  }
+
+  // ==========================================================
+  // PERFIL
+  // ==========================================================
+
+  if (telaAtual === 'Perfil') {
+    return (
+      <Perfil
+        usuario={usuarioAtual}
+        onVoltar={() => setTelaAtual('Home')}
+        onAbrirHome={() => setTelaAtual('Home')}
+        onAbrirDiario={() => setTelaAtual('Diario')}
+        onAdicionar={() => setTelaAtual('NovoRegistro')}
+        onAbrirDetalhes={midia => {
+          abrirDetalhes(midia, 'Perfil');
+        }}
+        onLogout={encerrarSessao}
       />
     );
   }
@@ -570,17 +550,14 @@ export default function App() {
       <Home
         usuario={usuarioAtual}
         onLogout={encerrarSessao}
-
         onAbrirDetalhes={midia => {
           abrirDetalhes(midia, 'Home');
         }}
-
         onAdicionar={() => {
           setTelaAtual('NovoRegistro');
         }}
-
-        // Integra a aba Diário da navegação inferior da Home.
         onAbrirDiario={abrirDiario}
+        onAbrirPerfil={() => setTelaAtual('Perfil')}
       />
     );
   }
@@ -664,10 +641,6 @@ export default function App() {
             ]}
           />
         ))}
-
-        <Text style={styles.ondaLegenda}>
-          TRILHA SONORA
-        </Text>
       </View>
     );
   };
@@ -683,11 +656,6 @@ export default function App() {
     animacao,
   }) => {
     const central = tipo === 'central';
-
-    /*
-      A rotação e a animação vertical ficam juntas.
-      Isso evita que uma transformação sobrescreva a outra.
-    */
 
     const rotacao =
       tipo === 'esquerda'
@@ -713,7 +681,6 @@ export default function App() {
               outputRange: [1, 0.55],
               extrapolate: 'clamp',
             }),
-
             transform: [
               ...rotacao,
               { translateY: animacao },
@@ -780,8 +747,6 @@ export default function App() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.conteudo}
       >
-        {/* DESTAQUES */}
-
         <View style={styles.secaoDestaques}>
           <View style={styles.carrossel}>
             {renderCardFilme({
@@ -820,8 +785,6 @@ export default function App() {
           )}
         </View>
 
-        {/* MARCA */}
-
         <Animated.View
           style={[
             styles.secaoMarca,
@@ -854,8 +817,6 @@ export default function App() {
           </Text>
         </Animated.View>
 
-        {/* DESCRIÇÃO */}
-
         <Animated.View
           style={[
             styles.secaoDescricao,
@@ -871,8 +832,6 @@ export default function App() {
             — tudo em um só lugar.
           </Text>
         </Animated.View>
-
-        {/* RECURSOS */}
 
         <Animated.View
           style={[
@@ -917,8 +876,6 @@ export default function App() {
           </View>
         </Animated.View>
 
-        {/* AÇÕES */}
-
         <Animated.View
           style={[
             styles.acoes,
@@ -948,8 +905,6 @@ export default function App() {
             />
           </TouchableOpacity>
 
-          {/* DIVISOR */}
-
           <View style={styles.divisorSocial}>
             <View style={styles.linhaDivisor} />
 
@@ -959,8 +914,6 @@ export default function App() {
 
             <View style={styles.linhaDivisor} />
           </View>
-
-          {/* REDES SOCIAIS */}
 
           <View style={styles.linhaSocial}>
             <TouchableOpacity
@@ -1000,8 +953,6 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
-          {/* ENTRAR */}
-
           <TouchableOpacity
             style={styles.botaoEntrar}
             activeOpacity={0.8}
@@ -1015,8 +966,6 @@ export default function App() {
             </Text>
           </TouchableOpacity>
 
-          {/* TERMOS */}
-
           <Text style={styles.termos}>
             Ao criar uma conta, você aceita nossos{' '}
             <Text style={styles.linkTermos}>
@@ -1028,8 +977,6 @@ export default function App() {
             </Text>.
           </Text>
         </Animated.View>
-
-        {/* RODAPÉ */}
 
         <View style={styles.rodape}>
           <View style={styles.pontoRodape} />
@@ -1095,8 +1042,6 @@ const styles = StyleSheet.create({
     paddingBottom: 28,
   },
 
-  // DESTAQUES
-
   secaoDestaques: {
     height: 320,
     width: '100%',
@@ -1125,8 +1070,6 @@ const styles = StyleSheet.create({
     color: CORES.textoSecundario,
     fontSize: 12,
   },
-
-  // CARDS
 
   cardFilme: {
     overflow: 'hidden',
@@ -1231,16 +1174,6 @@ const styles = StyleSheet.create({
     backgroundColor: CORES.azul,
   },
 
-  ondaLegenda: {
-    marginLeft: 5,
-    color: '#91A5C4',
-    fontSize: 8,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-  },
-
-  // MARCA
-
   secaoMarca: {
     alignItems: 'center',
     marginTop: 14,
@@ -1280,8 +1213,6 @@ const styles = StyleSheet.create({
     letterSpacing: 3,
   },
 
-  // DESCRIÇÃO
-
   secaoDescricao: {
     paddingHorizontal: 24,
     marginTop: 22,
@@ -1298,8 +1229,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
   },
-
-  // RECURSOS
 
   recursos: {
     flexDirection: 'row',
@@ -1329,8 +1258,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
   },
-
-  // AÇÕES
 
   acoes: {
     width: '100%',
@@ -1367,8 +1294,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
-  // DIVISOR SOCIAL
-
   divisorSocial: {
     width: '100%',
     flexDirection: 'row',
@@ -1389,8 +1314,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-
-  // REDES SOCIAIS
 
   linhaSocial: {
     width: '100%',
@@ -1417,8 +1340,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  // ENTRAR
-
   botaoEntrar: {
     width: '100%',
     minHeight: 50,
@@ -1442,8 +1363,6 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   },
 
-  // TERMOS
-
   termos: {
     color: '#77869D',
     textAlign: 'center',
@@ -1457,8 +1376,6 @@ const styles = StyleSheet.create({
     color: '#93C5FD',
     fontWeight: '800',
   },
-
-  // RODAPÉ
 
   rodape: {
     flexDirection: 'row',

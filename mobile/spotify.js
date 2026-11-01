@@ -5,7 +5,7 @@
 ========================================================= */
 
 const SERVER_BASE_URL =
-  'https://reynolds-christ-while-take.trycloudflare.com/TCC/TCC';
+  'https://archive-whose-publishing-list.trycloudflare.com/TCC/TCC';
 
 const SPOTIFY_TOKEN_URL =
   `${SERVER_BASE_URL}/spotify_token.php`;
