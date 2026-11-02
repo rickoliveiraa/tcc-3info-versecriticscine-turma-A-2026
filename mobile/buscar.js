@@ -48,7 +48,7 @@ const TMDB_IMAGE = 'https://image.tmdb.org/t/p/';
 const SERVER_ROOT =
   (typeof process !== 'undefined' &&
     process.env?.EXPO_PUBLIC_CINETRACK_SERVER_URL) ||
-  'https://outlets-univ-dirt-shorts.trycloudflare.com/TCC/TCC';
+  'https://compatible-assumed-williams-felt.trycloudflare.com/TCC/TCC';
 
 const USERS_SEARCH_URL =
   typeof process !== 'undefined'

@@ -1,5 +1,6 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+
 import {
   ActivityIndicator,
   Alert,
@@ -15,9 +16,20 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import AsyncStorage from './userStorage';
 import { lerListas, atualizarListas } from './listasStorage';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { salvarItemListaNaWeb } from './listasServidor';
+
+import {
+  Ionicons,
+  Feather,
+  MaterialCommunityIcons,
+} from '@expo/vector-icons';
+
+// ============================================================
+// CONFIGURAÇÕES
+// ============================================================
 
 const TMDB_KEY = '5c1853c10d9752023da5ddce4ada3b77';
 const TMDB_BASE = 'https://api.themoviedb.org/3';
@@ -42,17 +54,30 @@ const CORES = {
   borda: 'rgba(255,255,255,0.075)',
 };
 
+// ============================================================
+// NORMALIZAÇÃO
+// ============================================================
+
 const tipoNormalizado = tipo => {
   const valor = String(tipo || '').toLowerCase();
 
-  return ['tv', 'serie', 'série', 'series', 'show'].includes(valor)
+  return [
+    'tv',
+    'serie',
+    'série',
+    'series',
+    'show',
+  ].includes(valor)
     ? 'tv'
     : 'movie';
 };
 
 const tituloDaMidia = item =>
-  item?.title || item?.name || item?.titulo ||
-  item?.media_title || 'Sem título';
+  item?.title ||
+  item?.name ||
+  item?.titulo ||
+  item?.media_title ||
+  'Sem título';
 
 const caminhoPoster = item => {
   const poster =
@@ -103,6 +128,11 @@ const formatarDataCurta = valor => {
   });
 };
 
+// ============================================================
+// CONVERTER REGISTROS SALVOS
+// CORREÇÃO: IDENTIFICAR TAMBÉM SERIES PELAS CHAVES tv-123
+// ============================================================
+
 function converterRegistrosSalvos(dados) {
   if (!dados) return [];
 
@@ -124,7 +154,9 @@ function converterRegistrosSalvos(dados) {
       registros = colecao;
     } else {
       registros = Object.entries(dados)
-        .filter(([, valor]) => valor && typeof valor === 'object')
+        .filter(([, valor]) =>
+          valor && typeof valor === 'object'
+        )
         .map(([chave, valor]) => ({
           ...valor,
           _chaveArmazenamento: chave,
@@ -135,16 +167,47 @@ function converterRegistrosSalvos(dados) {
   return registros
     .filter(item => item && typeof item === 'object')
     .map(item => {
-      const midia = item.media || item.midia || item.filme || {};
+      const midia =
+        item.media ||
+        item.midia ||
+        item.filme ||
+        {};
 
-      const tipo = tipoNormalizado(
+      const chaveArmazenamento = String(
+        item._chaveArmazenamento || ''
+      );
+
+      // Primeiro tenta descobrir o tipo pelo próprio registro.
+      const tipoInformado =
         item.tipo ||
         item.media_type ||
         item.mediaType ||
         midia.tipo ||
-        midia.media_type ||
-        'movie'
-      );
+        midia.media_type;
+
+      // Se não houver tipo, verifica a chave e os campos do TMDB.
+      // Exemplo: tv-123 precisa continuar sendo uma série.
+      const ehSeriePelaChave =
+        /^(?:tv|serie|série)[-_]/i.test(
+          chaveArmazenamento
+        );
+
+      const possuiDadosDeSerie =
+        Boolean(
+          midia.first_air_date ||
+          midia.original_name ||
+          midia.name ||
+          item.first_air_date ||
+          item.original_name
+        );
+
+      const tipo = tipoInformado
+        ? tipoNormalizado(tipoInformado)
+        : (
+            ehSeriePelaChave || possuiDadosDeSerie
+              ? 'tv'
+              : 'movie'
+          );
 
       let id =
         midia.id ||
@@ -155,18 +218,24 @@ function converterRegistrosSalvos(dados) {
         item.filme_id ||
         item.id;
 
-      if (!id && item._chaveArmazenamento) {
-        const encontrado = String(
-          item._chaveArmazenamento
-        ).match(/(?:movie|tv)[-_](\d+)/i);
+      // CORREÇÃO: captura corretamente o número em movie-123 ou tv-123.
+      if (!id && chaveArmazenamento) {
+        const encontrado = chaveArmazenamento.match(
+          /^(?:movie|tv|serie|série|filme)[-_](\d+)/i
+        );
 
-        if (encontrado) id = encontrado[1];
+        if (encontrado) {
+          id = encontrado[1];
+        }
       }
 
       return {
         ...item,
+
         id: id ? Number(id) || id : null,
+
         tipo,
+
         title:
           midia.title ||
           midia.name ||
@@ -174,16 +243,19 @@ function converterRegistrosSalvos(dados) {
           item.title ||
           item.media_title ||
           'Obra sem título',
+
         poster_path:
           midia.poster_path ||
           item.poster_path ||
           item.poster_url ||
           item.poster ||
           null,
+
         release_date:
           midia.release_date ||
           midia.first_air_date ||
           item.release_date ||
+          item.first_air_date ||
           item.ano ||
           '',
       };
@@ -195,7 +267,14 @@ function converterRegistrosSalvos(dados) {
     );
 }
 
-export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
+// ============================================================
+// COMPONENTE NOVO REGISTRO
+// ============================================================
+
+export default function NovoRegistro({
+  onVoltar,
+  onAbrirDetalhes,
+}) {
   const [tipoAtivo, setTipoAtivo] = useState('filme');
 
   const [busca, setBusca] = useState('');
@@ -238,14 +317,23 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       String(lista.id) === String(listaSelecionadaId)
     ) || null;
 
-  // Todas as gravações de listas passam pelo serviço compartilhado.
-  const atualizarListasPersistidas = useCallback(async atualizador => {
-    const atualizadas = await atualizarListas(atualizador);
-    setListas(atualizadas);
-    return atualizadas;
-  }, []);
+  // ==========================================================
+  // ATUALIZAR LISTAS PERSISTIDAS
+  // ==========================================================
 
-  // Carrega as coleções e restaura o estado da tela.
+  const atualizarListasPersistidas = useCallback(
+    async atualizador => {
+      const atualizadas = await atualizarListas(atualizador);
+      setListas(atualizadas);
+      return atualizadas;
+    },
+    []
+  );
+
+  // ==========================================================
+  // CARREGAR DADOS E RESTAURAR ESTADO
+  // ==========================================================
+
   useEffect(() => {
     let ativo = true;
 
@@ -275,7 +363,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           }
         }
       } catch (erro) {
-        console.warn('Erro ao iniciar Novo Registro:', erro);
+        console.warn(
+          'Erro ao iniciar Novo Registro:',
+          erro
+        );
       } finally {
         if (ativo) setRestaurandoEstado(false);
       }
@@ -287,6 +378,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       ativo = false;
     };
   }, []);
+
+  // ==========================================================
+  // SALVAR ESTADO DA TELA
+  // ==========================================================
 
   const salvarEstadoTela = async (
     tipo = tipoAtivo,
@@ -301,7 +396,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         })
       );
     } catch (erro) {
-      console.warn('Erro ao salvar estado da tela:', erro);
+      console.warn(
+        'Erro ao salvar estado da tela:',
+        erro
+      );
     }
   };
 
@@ -317,12 +415,17 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     }
   }, [listas, listaSelecionadaId]);
 
-  // Vistos recentemente.
+  // ==========================================================
+  // VISTOS RECENTEMENTE
+  // ==========================================================
+
   const carregarRecentes = useCallback(async () => {
     setCarregandoRecentes(true);
 
     try {
-      const salvo = await AsyncStorage.getItem(CHAVE_AVALIACOES);
+      const salvo = await AsyncStorage.getItem(
+        CHAVE_AVALIACOES
+      );
 
       const registros = salvo
         ? converterRegistrosSalvos(JSON.parse(salvo))
@@ -334,7 +437,11 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           .slice(0, 10)
       );
     } catch (erro) {
-      console.warn('Erro ao carregar registros recentes:', erro);
+      console.warn(
+        'Erro ao carregar registros recentes:',
+        erro
+      );
+
       setRecentes([]);
     } finally {
       setCarregandoRecentes(false);
@@ -345,7 +452,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     carregarRecentes();
   }, [carregarRecentes]);
 
-  // Populares da TMDB.
+  // ==========================================================
+  // POPULARES DO TMDB
+  // ==========================================================
+
   const carregarPopulares = useCallback(async () => {
     if (ehLista) return;
 
@@ -357,7 +467,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       );
 
       if (!resposta.ok) {
-        throw new Error('Não foi possível carregar os populares.');
+        throw new Error(
+          'Não foi possível carregar os populares.'
+        );
       }
 
       const dados = await resposta.json();
@@ -368,7 +480,11 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           : []
       );
     } catch (erro) {
-      console.warn('Erro ao carregar populares:', erro);
+      console.warn(
+        'Erro ao carregar populares:',
+        erro
+      );
+
       setPopulares([]);
     } finally {
       setCarregandoPopulares(false);
@@ -379,7 +495,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     carregarPopulares();
   }, [carregarPopulares]);
 
-  // Pesquisa principal.
+  // ==========================================================
+  // PESQUISA PRINCIPAL
+  // ==========================================================
+
   useEffect(() => {
     const termo = busca.trim();
     const requisicao = ++buscaRequestRef.current;
@@ -401,7 +520,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         );
 
         if (!resposta.ok) {
-          throw new Error('A pesquisa não pôde ser concluída.');
+          throw new Error(
+            'A pesquisa não pôde ser concluída.'
+          );
         }
 
         const dados = await resposta.json();
@@ -416,12 +537,16 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       } catch (erro) {
         if (buscaRequestRef.current === requisicao) {
           setResultadosBusca([]);
+
           setErroBusca(
             'Não foi possível pesquisar agora. Tente novamente.'
           );
         }
 
-        console.warn('Erro na pesquisa TMDB:', erro);
+        console.warn(
+          'Erro na pesquisa TMDB:',
+          erro
+        );
       } finally {
         if (buscaRequestRef.current === requisicao) {
           setBuscando(false);
@@ -432,12 +557,19 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     return () => clearTimeout(temporizador);
   }, [busca, tipoTMDB, ehLista]);
 
-  // Pesquisa dentro de uma lista.
+  // ==========================================================
+  // PESQUISA DENTRO DE UMA LISTA
+  // ==========================================================
+
   useEffect(() => {
     const termo = buscaLista.trim();
     const requisicao = ++listaRequestRef.current;
 
-    if (!ehLista || !listaSelecionadaId || termo.length < 2) {
+    if (
+      !ehLista ||
+      !listaSelecionadaId ||
+      termo.length < 2
+    ) {
       setResultadosLista([]);
       setBuscandoLista(false);
       setErroBuscaLista('');
@@ -454,7 +586,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         );
 
         if (!resposta.ok) {
-          throw new Error('Não foi possível pesquisar essa obra.');
+          throw new Error(
+            'Não foi possível pesquisar essa obra.'
+          );
         }
 
         const dados = await resposta.json();
@@ -469,12 +603,16 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       } catch (erro) {
         if (listaRequestRef.current === requisicao) {
           setResultadosLista([]);
+
           setErroBuscaLista(
             'Não foi possível pesquisar. Verifique sua conexão e tente novamente.'
           );
         }
 
-        console.warn('Erro ao pesquisar dentro da lista:', erro);
+        console.warn(
+          'Erro ao pesquisar dentro da lista:',
+          erro
+        );
       } finally {
         if (listaRequestRef.current === requisicao) {
           setBuscandoLista(false);
@@ -490,7 +628,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     listaSelecionadaId,
   ]);
 
-  // Trocar o tipo do registro.
+  // ==========================================================
+  // TROCAR O TIPO DO REGISTRO
+  // ==========================================================
+
   const selecionarTipo = tipo => {
     Keyboard.dismiss();
     setBusca('');
@@ -501,13 +642,17 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     salvarEstadoTela(tipo, null);
   };
 
-  // Abrir detalhes de filme ou série.
+  // ==========================================================
+  // ABRIR DETALHES DE FILME OU SÉRIE
+  // ==========================================================
+
   const abrirMidia = async (item, tipo = tipoTMDB) => {
     if (!item?.id) {
       Alert.alert(
         'Não foi possível abrir',
         'Não conseguimos identificar essa obra.'
       );
+
       return;
     }
 
@@ -516,11 +661,16 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         'Indisponível',
         'A tela de detalhes ainda não está conectada.'
       );
+
       return;
     }
 
     Keyboard.dismiss();
-    await salvarEstadoTela(tipoAtivo, listaSelecionadaId);
+
+    await salvarEstadoTela(
+      tipoAtivo,
+      listaSelecionadaId
+    );
 
     onAbrirDetalhes({
       id: Number(item.id) || item.id,
@@ -529,7 +679,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     });
   };
 
-  // Criar lista.
+  // ==========================================================
+  // CRIAR LISTA
+  // ==========================================================
+
   const criarLista = async () => {
     const nome = nomeLista.trim();
     const descricao = descricaoLista.trim();
@@ -539,6 +692,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         'Dê um nome à sua lista',
         'Digite um título para conseguir salvar sua lista.'
       );
+
       return;
     }
 
@@ -546,7 +700,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
 
     try {
       const novaLista = {
-        id: `lista-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: `lista-${Date.now()}-${Math.random()
+          .toString(36)
+          .slice(2, 8)}`,
         nome,
         descricao,
         criada_em: new Date().toISOString(),
@@ -578,7 +734,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     }
   };
 
-  // Abrir uma lista.
+  // ==========================================================
+  // ABRIR UMA LISTA
+  // ==========================================================
+
   const abrirLista = lista => {
     setListaSelecionadaId(String(lista.id));
     setTipoAtivo('lista');
@@ -586,7 +745,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     setResultadosLista([]);
     setErroBuscaLista('');
     setTipoPesquisaLista('movie');
+
     salvarEstadoTela('lista', String(lista.id));
+
     Keyboard.dismiss();
   };
 
@@ -595,7 +756,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     setBuscaLista('');
     setResultadosLista([]);
     setErroBuscaLista('');
+
     salvarEstadoTela('lista', null);
+
     Keyboard.dismiss();
   };
 
@@ -606,9 +769,14 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     }
 
     try {
-      await AsyncStorage.removeItem(CHAVE_ESTADO_NOVO_REGISTRO);
+      await AsyncStorage.removeItem(
+        CHAVE_ESTADO_NOVO_REGISTRO
+      );
     } catch (erro) {
-      console.warn('Erro ao limpar estado da tela:', erro);
+      console.warn(
+        'Erro ao limpar estado da tela:',
+        erro
+      );
     }
 
     if (typeof onVoltar === 'function') {
@@ -616,7 +784,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     }
   };
 
-  // Verificar duplicação.
+  // ==========================================================
+  // VERIFICAR DUPLICAÇÃO
+  // ==========================================================
+
   const obraJaEstaNaLista = (lista, item, tipo) => {
     if (!lista || !item?.id) return false;
 
@@ -626,13 +797,17 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Adicionar filme ou série.
+  // ==========================================================
+  // ADICIONAR FILME OU SÉRIE À LISTA
+  // ==========================================================
+
   const adicionarObraNaLista = async (item, tipo) => {
     if (!listaSelecionadaId || !item?.id) {
       Alert.alert(
         'Não foi possível adicionar',
         'Selecione uma lista e tente novamente.'
       );
+
       return;
     }
 
@@ -650,14 +825,23 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         tipo: tipoObra,
         title: item.title || item.name || 'Sem título',
         poster_path: item.poster_path || null,
-        release_date: item.release_date || item.first_air_date || '',
+        release_date:
+          item.release_date ||
+          item.first_air_date ||
+          '',
         vote_average: Number(item.vote_average || 0),
         adicionada_em: new Date().toISOString(),
       };
 
+      const listaAlvo = listas.find(lista =>
+        String(lista.id) === String(listaSelecionadaId)
+      );
+
       await atualizarListasPersistidas(atuais =>
         atuais.map(lista => {
-          if (String(lista.id) !== String(listaSelecionadaId)) {
+          if (
+            String(lista.id) !== String(listaSelecionadaId)
+          ) {
             return lista;
           }
 
@@ -670,7 +854,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
 
           return {
             ...lista,
-            itens: [...lista.itens, obra],
+            itens: [...(lista.itens || []), obra],
           };
         })
       );
@@ -680,15 +864,54 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           'Lista não encontrada',
           'Volte às listas e abra a coleção novamente.'
         );
+
         return;
       }
 
       if (duplicada) {
-        Alert.alert(
-          'Obra já adicionada',
-          'Essa obra já está nesta lista.'
-        );
+        try {
+          await salvarItemListaNaWeb({
+            lista: listaAlvo,
+            item: obra,
+          });
+
+          Alert.alert(
+            'Lista sincronizada',
+            'Essa obra já estava no aplicativo e agora foi conferida/sincronizada com o site.'
+          );
+        } catch (erroWeb) {
+          console.warn(
+            'A obra já existe localmente, mas não sincronizou com o site:',
+            erroWeb
+          );
+
+          Alert.alert(
+            'Ainda não sincronizou',
+            'A obra continua salva no aplicativo, mas não chegou ao site. Verifique o login e a conexão.'
+          );
+        }
+
         return;
+      }
+
+      // A gravação local é mantida mesmo se a rede falhar.
+      // Em seguida, enviamos a mesma obra ao banco online.
+
+      try {
+        await salvarItemListaNaWeb({
+          lista: listaAlvo,
+          item: obra,
+        });
+      } catch (erroWeb) {
+        console.warn(
+          'Obra salva localmente, mas não sincronizou com o site:',
+          erroWeb
+        );
+
+        Alert.alert(
+          'Salvo no aplicativo',
+          'A obra ficou salva neste aparelho, mas não chegou ao site. Verifique o login e a conexão e tente novamente.'
+        );
       }
 
       setResultadosLista(prev =>
@@ -699,7 +922,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         )
       );
     } catch (erro) {
-      console.warn('Erro ao adicionar obra à lista:', erro);
+      console.warn(
+        'Erro ao adicionar obra à lista:',
+        erro
+      );
 
       Alert.alert(
         'Erro ao adicionar',
@@ -710,7 +936,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     }
   };
 
-  // Remover obra da lista.
+  // ==========================================================
+  // REMOVER OBRA DA LISTA
+  // ==========================================================
+
   const removerObraDaLista = obra => {
     if (!listaSelecionadaId || !obra?.id) return;
 
@@ -738,7 +967,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                     ? lista
                     : {
                         ...lista,
-                        itens: lista.itens.filter(item =>
+                        itens: (lista.itens || []).filter(item =>
                           !(
                             String(item.id) === String(obra.id) &&
                             tipoNormalizado(item.tipo) === tipoObra
@@ -748,7 +977,11 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 )
               );
             } catch (erro) {
-              console.warn('Erro ao remover obra:', erro);
+              console.warn(
+                'Erro ao remover obra:',
+                erro
+              );
+
               Alert.alert(
                 'Erro',
                 'Não foi possível remover essa obra.'
@@ -762,7 +995,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Excluir lista.
+  // ==========================================================
+  // EXCLUIR LISTA
+  // ==========================================================
+
   const excluirLista = lista => {
     Alert.alert(
       'Excluir lista',
@@ -783,11 +1019,17 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 )
               );
 
-              if (String(listaSelecionadaId) === String(lista.id)) {
+              if (
+                String(listaSelecionadaId) === String(lista.id)
+              ) {
                 voltarParaListas();
               }
             } catch (erro) {
-              console.warn('Erro ao excluir lista:', erro);
+              console.warn(
+                'Erro ao excluir lista:',
+                erro
+              );
+
               Alert.alert(
                 'Erro',
                 'Não foi possível excluir esta lista.'
@@ -799,16 +1041,26 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Título de seção.
+  // ==========================================================
+  // TÍTULO DE SEÇÃO
+  // ==========================================================
+
   const renderTituloSecao = (titulo, complemento = null) => (
     <View style={styles.tituloSecao}>
-      <Text style={styles.textoTituloSecao}>{titulo}</Text>
+      <Text style={styles.textoTituloSecao}>
+        {titulo}
+      </Text>
+
       <View style={styles.linhaSecao} />
+
       {complemento}
     </View>
   );
 
-  // Poster pequeno.
+  // ==========================================================
+  // POSTER PEQUENO
+  // ==========================================================
+
   const renderPosterPequeno = (item, ehTv = false) => {
     const poster = caminhoPoster(item);
 
@@ -833,7 +1085,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Registros recentes.
+  // ==========================================================
+  // REGISTROS RECENTES
+  // ==========================================================
+
   const renderRecente = (item, indice) => {
     const poster = caminhoPoster(item);
     const data = formatarDataCurta(dataDoRegistro(item));
@@ -863,18 +1118,26 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           )}
         </View>
 
-        <Text style={styles.nomeRecente} numberOfLines={1}>
+        <Text
+          style={styles.nomeRecente}
+          numberOfLines={1}
+        >
           {tituloDaMidia(item)}
         </Text>
 
         {!!data && (
-          <Text style={styles.dataRecente}>{data}</Text>
+          <Text style={styles.dataRecente}>
+            {data}
+          </Text>
         )}
       </TouchableOpacity>
     );
   };
 
-  // Atalhos.
+  // ==========================================================
+  // ATALHOS
+  // ==========================================================
+
   const renderAtalho = ({ tipo, icone, titulo, cor }) => (
     <TouchableOpacity
       key={tipo}
@@ -900,7 +1163,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     </TouchableOpacity>
   );
 
-  // Resultado da busca principal.
+  // ==========================================================
+  // RESULTADO DA BUSCA PRINCIPAL
+  // ==========================================================
+
   const renderResultado = (item, indice) => (
     <TouchableOpacity
       key={`${item.id}-${indice}`}
@@ -911,7 +1177,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       {renderPosterPequeno(item, ehSerie)}
 
       <View style={styles.infoResultado}>
-        <Text numberOfLines={2} style={styles.tituloResultado}>
+        <Text
+          numberOfLines={2}
+          style={styles.tituloResultado}
+        >
           {tituloDaMidia(item)}
         </Text>
 
@@ -923,7 +1192,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         </Text>
 
         {!!item.overview && (
-          <Text numberOfLines={2} style={styles.sinopseResultado}>
+          <Text
+            numberOfLines={2}
+            style={styles.sinopseResultado}
+          >
             {item.overview}
           </Text>
         )}
@@ -932,13 +1204,19 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       <View
         style={[
           styles.etiquetaTipo,
-          ehSerie ? styles.etiquetaSerie : styles.etiquetaFilme,
+          ehSerie
+            ? styles.etiquetaSerie
+            : styles.etiquetaFilme,
         ]}
       >
         <Text
           style={[
             styles.textoEtiqueta,
-            { color: ehSerie ? CORES.roxo : CORES.azulClaro },
+            {
+              color: ehSerie
+                ? CORES.roxo
+                : CORES.azulClaro,
+            },
           ]}
         >
           {ehSerie ? 'SÉRIE' : 'FILME'}
@@ -953,7 +1231,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     </TouchableOpacity>
   );
 
-  // Populares.
+  // ==========================================================
+  // POPULARES
+  // ==========================================================
+
   const renderPopular = (item, indice) => {
     const poster = caminhoPoster(item);
 
@@ -971,7 +1252,12 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
             resizeMode="cover"
           />
         ) : (
-          <View style={[styles.posterPopular, styles.posterVazio]}>
+          <View
+            style={[
+              styles.posterPopular,
+              styles.posterVazio,
+            ]}
+          >
             <Ionicons
               name={ehSerie ? 'tv-outline' : 'film-outline'}
               size={21}
@@ -981,7 +1267,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         )}
 
         <View style={styles.infoPopular}>
-          <Text style={styles.tituloPopular} numberOfLines={2}>
+          <Text
+            style={styles.tituloPopular}
+            numberOfLines={2}
+          >
             {tituloDaMidia(item)}
           </Text>
 
@@ -996,6 +1285,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={12}
                 color="#FBBF24"
               />
+
               <Text style={styles.textoNotaPopular}>
                 {Number(item.vote_average).toFixed(1)}
               </Text>
@@ -1006,13 +1296,19 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         <View
           style={[
             styles.etiquetaTipo,
-            ehSerie ? styles.etiquetaSerie : styles.etiquetaFilme,
+            ehSerie
+              ? styles.etiquetaSerie
+              : styles.etiquetaFilme,
           ]}
         >
           <Text
             style={[
               styles.textoEtiqueta,
-              { color: ehSerie ? CORES.roxo : CORES.azulClaro },
+              {
+                color: ehSerie
+                  ? CORES.roxo
+                  : CORES.azulClaro,
+              },
             ]}
           >
             {ehSerie ? 'SÉRIE' : 'FILME'}
@@ -1022,7 +1318,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Formulário de lista.
+  // ==========================================================
+  // FORMULÁRIO DE LISTA
+  // ==========================================================
+
   const renderFormularioLista = () => (
     <>
       <View style={styles.listaIntro}>
@@ -1046,7 +1345,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       </View>
 
       <View style={styles.formLista}>
-        <Text style={styles.rotuloCampo}>NOME DA LISTA</Text>
+        <Text style={styles.rotuloCampo}>
+          NOME DA LISTA
+        </Text>
 
         <TextInput
           value={nomeLista}
@@ -1058,7 +1359,12 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           returnKeyType="next"
         />
 
-        <Text style={[styles.rotuloCampo, { marginTop: 18 }]}>
+        <Text
+          style={[
+            styles.rotuloCampo,
+            { marginTop: 18 },
+          ]}
+        >
           DESCRIÇÃO (OPCIONAL)
         </Text>
 
@@ -1067,7 +1373,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           onChangeText={setDescricaoLista}
           placeholder="Sobre o que é essa lista?"
           placeholderTextColor={CORES.apagado}
-          style={[styles.campoLista, styles.campoDescricao]}
+          style={[
+            styles.campoLista,
+            styles.campoDescricao,
+          ]}
           maxLength={180}
           multiline
           textAlignVertical="top"
@@ -1086,7 +1395,12 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
             <ActivityIndicator color="#FFFFFF" />
           ) : (
             <>
-              <Feather name="plus" size={19} color="#FFFFFF" />
+              <Feather
+                name="plus"
+                size={19}
+                color="#FFFFFF"
+              />
+
               <Text style={styles.textoBotaoCriarLista}>
                 Criar lista
               </Text>
@@ -1097,14 +1411,20 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     </>
   );
 
-  // Minhas listas.
+  // ==========================================================
+  // MINHAS LISTAS
+  // ==========================================================
+
   const renderMinhasListas = () => (
     <>
       {renderTituloSecao('MINHAS LISTAS')}
 
       {listas.length ? (
         listas.map(lista => (
-          <View key={lista.id} style={styles.cardLista}>
+          <View
+            key={lista.id}
+            style={styles.cardLista}
+          >
             <TouchableOpacity
               style={styles.abrirListaCard}
               activeOpacity={0.8}
@@ -1134,8 +1454,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 </Text>
 
                 <Text style={styles.quantidadeCardLista}>
-                  {lista.itens.length}{' '}
-                  {lista.itens.length === 1 ? 'obra' : 'obras'}
+                  {(lista.itens || []).length}{' '}
+                  {(lista.itens || []).length === 1
+                    ? 'obra'
+                    : 'obras'}
                 </Text>
               </View>
 
@@ -1179,7 +1501,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     </>
   );
 
-  // Resultado da pesquisa dentro de uma lista.
+  // ==========================================================
+  // RESULTADO DA PESQUISA DENTRO DE UMA LISTA
+  // ==========================================================
+
   const renderResultadoParaLista = (item, indice) => {
     const jaAdicionado = obraJaEstaNaLista(
       listaSelecionada,
@@ -1197,7 +1522,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
       >
         <TouchableOpacity
           activeOpacity={0.8}
-          onPress={() => abrirMidia(item, tipoPesquisaLista)}
+          onPress={() =>
+            abrirMidia(item, tipoPesquisaLista)
+          }
         >
           {renderPosterPequeno(
             item,
@@ -1208,7 +1535,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
         <TouchableOpacity
           style={styles.infoResultadoLista}
           activeOpacity={0.8}
-          onPress={() => abrirMidia(item, tipoPesquisaLista)}
+          onPress={() =>
+            abrirMidia(item, tipoPesquisaLista)
+          }
         >
           <Text
             style={styles.tituloResultado}
@@ -1263,6 +1592,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={15}
                 color={CORES.verde}
               />
+
               <Text style={styles.textoJaAdicionado}>
                 Adicionado
               </Text>
@@ -1274,6 +1604,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={17}
                 color="#FFFFFF"
               />
+
               <Text style={styles.textoAdicionarObra}>
                 Adicionar
               </Text>
@@ -1284,7 +1615,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Obras salvas dentro da lista.
+  // ==========================================================
+  // OBRAS SALVAS DENTRO DA LISTA
+  // ==========================================================
+
   const renderObrasDaLista = () => {
     if (!listaSelecionada?.itens?.length) {
       return (
@@ -1409,7 +1743,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     });
   };
 
-  // Detalhes de uma lista.
+  // ==========================================================
+  // DETALHES DE UMA LISTA
+  // ==========================================================
+
   const renderDetalheLista = () => {
     if (!listaSelecionada) {
       return (
@@ -1452,7 +1789,9 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
 
             <Text style={styles.quantidadeListaAberta}>
               {listaSelecionada.itens.length}{' '}
-              {listaSelecionada.itens.length === 1 ? 'obra' : 'obras'}
+              {listaSelecionada.itens.length === 1
+                ? 'obra'
+                : 'obras'}
             </Text>
           </View>
         </View>
@@ -1586,6 +1925,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={15}
                 color={CORES.secundario}
               />
+
               <Text style={styles.dicaPesquisaTexto}>
                 Digite pelo menos duas letras para pesquisar.
               </Text>
@@ -1596,6 +1936,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size="small"
                 color={CORES.azulClaro}
               />
+
               <Text style={styles.estadoTexto}>
                 Pesquisando na TMDB...
               </Text>
@@ -1607,6 +1948,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={23}
                 color={CORES.apagado}
               />
+
               <Text style={styles.estadoTexto}>
                 {erroBuscaLista}
               </Text>
@@ -1616,6 +1958,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
               <Text style={styles.rotuloResultados}>
                 RESULTADOS ENCONTRADOS
               </Text>
+
               {resultadosLista.map(renderResultadoParaLista)}
             </View>
           ) : (
@@ -1625,6 +1968,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={23}
                 color={CORES.apagado}
               />
+
               <Text style={styles.estadoTexto}>
                 Nenhuma obra encontrada com esse nome.
               </Text>
@@ -1644,7 +1988,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Conteúdo principal: filmes e séries.
+  // ==========================================================
+  // CONTEÚDO PRINCIPAL: FILMES E SÉRIES
+  // ==========================================================
+
   const renderConteudoCatalogo = () => {
     if (busca.trim().length >= 2) {
       return (
@@ -1657,6 +2004,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size="small"
                 color={CORES.azulClaro}
               />
+
               <Text style={styles.estadoTexto}>
                 Procurando na TMDB...
               </Text>
@@ -1668,6 +2016,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={25}
                 color={CORES.apagado}
               />
+
               <Text style={styles.estadoTexto}>
                 {erroBusca}
               </Text>
@@ -1681,9 +2030,11 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
                 size={26}
                 color={CORES.apagado}
               />
+
               <Text style={styles.estadoTitulo}>
                 Nenhum resultado encontrado
               </Text>
+
               <Text style={styles.estadoTexto}>
                 Tente pesquisar usando outro título.
               </Text>
@@ -1717,6 +2068,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
               size={17}
               color={CORES.apagado}
             />
+
             <Text style={styles.semRecentesTexto}>
               Seus últimos registros aparecerão aqui.
             </Text>
@@ -1756,6 +2108,7 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
               size="small"
               color={CORES.azulClaro}
             />
+
             <Text style={styles.estadoTexto}>
               Carregando catálogo...
             </Text>
@@ -1769,9 +2122,11 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
               size={24}
               color={CORES.apagado}
             />
+
             <Text style={styles.estadoTexto}>
               Não foi possível carregar os populares.
             </Text>
+
             <TouchableOpacity
               onPress={carregarPopulares}
               style={styles.botaoTentarNovamente}
@@ -1786,7 +2141,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
     );
   };
 
-  // Cabeçalho e retorno.
+  // ==========================================================
+  // CABEÇALHO E RETORNO
+  // ==========================================================
+
   const voltarDoCabecalho = () => {
     if (ehLista && listaSelecionadaId) {
       voltarParaListas();
@@ -1795,6 +2153,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
 
     voltarDaTela();
   };
+
+  // ==========================================================
+  // INTERFACE
+  // ==========================================================
 
   return (
     <SafeAreaView style={styles.container}>
@@ -1819,7 +2181,10 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
           />
         </TouchableOpacity>
 
-        <Text style={styles.tituloHeader} numberOfLines={1}>
+        <Text
+          style={styles.tituloHeader}
+          numberOfLines={1}
+        >
           {ehLista && listaSelecionada ? (
             listaSelecionada.nome
           ) : (
@@ -1947,7 +2312,12 @@ export default function NovoRegistro({ onVoltar, onAbrirDetalhes }) {
   );
 }
 
+// ============================================================
+// ESTILOS
+// ============================================================
+
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
     backgroundColor: CORES.fundo,

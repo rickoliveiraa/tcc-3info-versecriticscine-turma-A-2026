@@ -24,7 +24,7 @@ import {
   View,
 } from 'react-native';
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './userStorage';
 import { LinearGradient } from 'expo-linear-gradient';
 
 import {

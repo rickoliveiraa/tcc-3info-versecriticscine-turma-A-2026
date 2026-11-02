@@ -1,5 +1,5 @@
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from './userStorage';
 
 const CHAVE_LISTAS = '@CineTrack:listas';
 const CHAVE_BACKUP = '@CineTrack:listas_backup';

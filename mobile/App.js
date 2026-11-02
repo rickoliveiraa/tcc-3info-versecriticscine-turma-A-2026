@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {
   StyleSheet,
   Text,
@@ -14,7 +16,9 @@ import {
   ActivityIndicator,
   Animated,
   Linking,
+  Alert,
 } from 'react-native';
+
 import {
   Ionicons,
   Feather,
@@ -30,8 +34,16 @@ import NovoRegistro from './novoregistro';
 import Diario from './diario';
 import Perfil from './perfil';
 
+import { sincronizarDadosLocais } from './sincronizacao';
+
+// ============================================================
+// CONFIGURAÇÕES
+// ============================================================
+
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
 const CHAVE_SESSAO = '@CineTrack:usuario';
+const CHAVE_TOKEN = '@CineTrack:token';
 
 const CORES = {
   fundo: '#050914',
@@ -44,6 +56,10 @@ const CORES = {
   borda: 'rgba(148,163,184,0.16)',
   dourado: '#FBBF24',
 };
+
+// ============================================================
+// IMAGENS
+// ============================================================
 
 const POSTER_FALLBACKS = [
   require('./assets/notebook.jpg'),
@@ -59,19 +75,47 @@ const TITULOS_FALLBACK = [
   'Pânico 4',
 ];
 
+// ============================================================
+// VERIFICAÇÃO DE USUÁRIO
+// ============================================================
+
+function usuarioValido(usuario) {
+  return (
+    usuario &&
+    typeof usuario === 'object' &&
+    usuario.id !== undefined &&
+    usuario.id !== null &&
+    String(usuario.id).trim() !== ''
+  );
+}
+
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
+
 export default function App() {
   const [telaAtual, setTelaAtual] = useState('HomeLanding');
+
   const [usuarioAtual, setUsuarioAtual] = useState(null);
+
   const [verificandoSessao, setVerificandoSessao] = useState(true);
+
   const [filmes, setFilmes] = useState([]);
+
   const [carregandoFilmes, setCarregandoFilmes] = useState(true);
+
   const [midiaSelecionada, setMidiaSelecionada] = useState(null);
+
   const [telaAnteriorDetalhes, setTelaAnteriorDetalhes] = useState('Home');
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
   const logoAnim = useRef(new Animated.Value(0.92)).current;
+
   const cardLeftAnim = useRef(new Animated.Value(24)).current;
+
   const cardCenterAnim = useRef(new Animated.Value(38)).current;
+
   const cardRightAnim = useRef(new Animated.Value(24)).current;
 
   // ==========================================================
@@ -109,6 +153,31 @@ export default function App() {
   };
 
   // ==========================================================
+  // SINCRONIZAR DADOS DA CONTA ATIVA
+  // ==========================================================
+
+  const sincronizarConta = async contexto => {
+    try {
+      const resultado = await sincronizarDadosLocais();
+
+      console.log(
+        `Sincronização concluída (${contexto}):`,
+        resultado
+      );
+
+      return resultado;
+
+    } catch (erro) {
+      console.warn(
+        `Não foi possível sincronizar os dados (${contexto}):`,
+        erro?.message || erro
+      );
+
+      return null;
+    }
+  };
+
+  // ==========================================================
   // RECUPERAR SESSÃO
   // ==========================================================
 
@@ -117,38 +186,96 @@ export default function App() {
 
     async function recuperarSessao() {
       try {
-        const usuarioSalvo = await AsyncStorage.getItem(CHAVE_SESSAO);
+        const [usuarioSalvo, tokenSalvo] =
+          await AsyncStorage.multiGet([
+            CHAVE_SESSAO,
+            CHAVE_TOKEN,
+          ]);
 
         if (!ativo) return;
 
-        if (usuarioSalvo) {
-          const usuario = JSON.parse(usuarioSalvo);
+        const textoUsuario = usuarioSalvo?.[1];
+        const token = tokenSalvo?.[1];
 
-          if (
-            usuario &&
-            typeof usuario === 'object' &&
-            (usuario.id || usuario.email)
-          ) {
-            setUsuarioAtual(usuario);
-            setTelaAtual('Home');
-          } else {
-            await AsyncStorage.removeItem(CHAVE_SESSAO);
-          }
+        if (!textoUsuario || !token) {
+          await AsyncStorage.multiRemove([
+            CHAVE_SESSAO,
+            CHAVE_TOKEN,
+          ]);
+
+          setUsuarioAtual(null);
+          setTelaAtual('HomeLanding');
+
+          return;
         }
+
+        let usuario;
+
+        try {
+          usuario = JSON.parse(textoUsuario);
+        } catch {
+          usuario = null;
+        }
+
+        /*
+         * Uma sessão só é válida para o CineTrack
+         * quando contém o ID real do usuário e um token.
+         *
+         * O userStorage utiliza o ID para separar
+         * os dados pessoais de cada conta.
+         */
+
+        if (
+          !usuarioValido(usuario) ||
+          typeof token !== 'string' ||
+          token.trim() === ''
+        ) {
+          await AsyncStorage.multiRemove([
+            CHAVE_SESSAO,
+            CHAVE_TOKEN,
+          ]);
+
+          setUsuarioAtual(null);
+          setTelaAtual('HomeLanding');
+
+          return;
+        }
+
+        if (!ativo) return;
+
+        setUsuarioAtual(usuario);
+
+        /*
+         * RECUPERAÇÃO DOS DADOS:
+         * primeiro confirma a sessão;
+         * depois busca avaliações e listas no servidor.
+         */
+
+        await sincronizarConta('recuperação da sessão');
+
+        if (!ativo) return;
+
+        setTelaAtual('Home');
+
       } catch (erro) {
         console.warn(
           'Não foi possível recuperar a sessão:',
           erro
         );
 
-        try {
-          await AsyncStorage.removeItem(CHAVE_SESSAO);
-        } catch (erroStorage) {
-          console.warn(
-            'Erro ao limpar sessão:',
-            erroStorage
-          );
+        /*
+         * Uma falha de rede na sincronização não deve
+         * apagar a sessão ou os dados locais.
+         *
+         * Só limpamos as chaves de autenticação quando
+         * a sessão estiver realmente inválida.
+         */
+
+        if (ativo) {
+          setUsuarioAtual(null);
+          setTelaAtual('HomeLanding');
         }
+
       } finally {
         if (ativo) {
           setVerificandoSessao(false);
@@ -164,20 +291,34 @@ export default function App() {
   }, []);
 
   // ==========================================================
-  // SALVAR SESSÃO
+  // SALVAR SESSÃO — LOGIN
   // ==========================================================
 
   const salvarSessao = async usuario => {
     try {
-      if (
-        !usuario ||
-        typeof usuario !== 'object' ||
-        (!usuario.id && !usuario.email)
-      ) {
+      if (!usuarioValido(usuario)) {
         throw new Error(
-          'Os dados do usuário não foram recebidos corretamente.'
+          'O servidor não retornou um ID válido para o usuário.'
         );
       }
+
+      const token = await AsyncStorage.getItem(CHAVE_TOKEN);
+
+      if (
+        typeof token !== 'string' ||
+        token.trim() === ''
+      ) {
+        throw new Error(
+          'Token de autenticação não encontrado. Faça login novamente.'
+        );
+      }
+
+      /*
+       * O teladelogin.js já deve ter armazenado
+       * o token da conta autenticada.
+       *
+       * Salvamos o usuário antes de acessar o userStorage.
+       */
 
       await AsyncStorage.setItem(
         CHAVE_SESSAO,
@@ -185,11 +326,95 @@ export default function App() {
       );
 
       setUsuarioAtual(usuario);
+
       setTelaAnteriorDetalhes('Home');
+
       setMidiaSelecionada(null);
+
+      /*
+       * Recupera os dados do servidor usando o token
+       * e o ID da conta que acabou de entrar.
+       */
+
+      await sincronizarConta('login');
+
       setTelaAtual('Home');
+
     } catch (erro) {
-      console.error('Erro ao salvar sessão:', erro);
+      console.error(
+        'Erro ao salvar sessão:',
+        erro
+      );
+
+      Alert.alert(
+        'Erro na autenticação',
+        erro.message ||
+          'Não foi possível iniciar sua sessão.'
+      );
+    }
+  };
+
+  // ==========================================================
+  // SALVAR SESSÃO — CADASTRO
+  // ==========================================================
+
+  const finalizarCadastro = async usuario => {
+    try {
+      if (!usuarioValido(usuario)) {
+        throw new Error(
+          'O cadastro não retornou um ID válido.'
+        );
+      }
+
+      /*
+       * O teladecadastro.js já deve ter gravado
+       * o usuário e o token antes de chamar esta função.
+       */
+
+      const token = await AsyncStorage.getItem(CHAVE_TOKEN);
+
+      if (
+        typeof token !== 'string' ||
+        token.trim() === ''
+      ) {
+        throw new Error(
+          'O token da nova conta não foi encontrado. Não foi possível iniciar a sessão.'
+        );
+      }
+
+      // Confirma a sessão com o ID verdadeiro do usuário.
+      await AsyncStorage.setItem(
+        CHAVE_SESSAO,
+        JSON.stringify(usuario)
+      );
+
+      setUsuarioAtual(usuario);
+
+      setMidiaSelecionada(null);
+
+      setTelaAnteriorDetalhes('Home');
+
+      /*
+       * A conta recém-criada passa pela sincronização
+       * usando seu próprio token.
+       */
+
+      await sincronizarConta('cadastro');
+
+      // Depois da sessão, abre a escolha de gêneros.
+      setTelaAtual('Generos');
+
+    } catch (erro) {
+      console.error(
+        'Erro ao finalizar cadastro:',
+        erro
+      );
+
+      Alert.alert(
+        'Erro ao iniciar sua conta',
+        erro.message ||
+          'Não foi possível iniciar a sessão da nova conta.'
+      );
     }
   };
 
@@ -199,13 +424,37 @@ export default function App() {
 
   const encerrarSessao = async () => {
     try {
-      await AsyncStorage.removeItem(CHAVE_SESSAO);
+      /*
+       * Remove somente as credenciais da sessão.
+       *
+       * As avaliações, listas e registros locais
+       * permanecem armazenados nas chaves individuais
+       * de cada conta dentro do userStorage.js.
+       */
+
+      await AsyncStorage.multiRemove([
+        CHAVE_SESSAO,
+        CHAVE_TOKEN,
+      ]);
+
     } catch (erro) {
-      console.warn('Erro ao encerrar sessão:', erro);
+      console.warn(
+        'Erro ao encerrar sessão:',
+        erro
+      );
+
+      Alert.alert(
+        'Aviso',
+        'Não foi possível limpar completamente a sessão local.'
+      );
+
     } finally {
       setUsuarioAtual(null);
+
       setMidiaSelecionada(null);
+
       setTelaAnteriorDetalhes('Home');
+
       setTelaAtual('HomeLanding');
     }
   };
@@ -222,7 +471,10 @@ export default function App() {
   // ABRIR DETALHES
   // ==========================================================
 
-  const abrirDetalhes = (midia, telaDeOrigem = 'Home') => {
+  const abrirDetalhes = (
+    midia,
+    telaDeOrigem = 'Home'
+  ) => {
     const midiaNormalizada = normalizarMidia(midia);
 
     if (!midiaNormalizada) {
@@ -230,6 +482,7 @@ export default function App() {
         'Não foi possível abrir os detalhes. Mídia inválida:',
         midia
       );
+
       return;
     }
 
@@ -244,7 +497,9 @@ export default function App() {
       : 'Home';
 
     setMidiaSelecionada(midiaNormalizada);
+
     setTelaAnteriorDetalhes(origem);
+
     setTelaAtual('Detalhes');
   };
 
@@ -256,6 +511,7 @@ export default function App() {
     const telaDestino = telaAnteriorDetalhes || 'Home';
 
     setMidiaSelecionada(null);
+
     setTelaAtual(telaDestino);
   };
 
@@ -290,11 +546,13 @@ export default function App() {
         if (ativo && Array.isArray(dados.results)) {
           setFilmes(dados.results.slice(0, 3));
         }
+
       } catch (erro) {
         console.warn(
           'Erro ao carregar filmes do TMDB:',
           erro
         );
+
       } finally {
         if (ativo) {
           setCarregandoFilmes(false);
@@ -317,9 +575,13 @@ export default function App() {
     if (telaAtual !== 'HomeLanding') return;
 
     fadeAnim.setValue(0);
+
     logoAnim.setValue(0.92);
+
     cardLeftAnim.setValue(24);
+
     cardCenterAnim.setValue(38);
+
     cardRightAnim.setValue(24);
 
     Animated.parallel([
@@ -357,6 +619,7 @@ export default function App() {
         useNativeDriver: true,
       }),
     ]).start();
+
   }, [
     telaAtual,
     fadeAnim,
@@ -410,29 +673,7 @@ export default function App() {
       <TelaCadastro
         onVoltar={() => setTelaAtual('HomeLanding')}
         onEntrar={() => setTelaAtual('Login')}
-        onCadastroSucesso={async usuario => {
-          try {
-            if (
-              usuario &&
-              typeof usuario === 'object' &&
-              (usuario.id || usuario.email)
-            ) {
-              await AsyncStorage.setItem(
-                CHAVE_SESSAO,
-                JSON.stringify(usuario)
-              );
-
-              setUsuarioAtual(usuario);
-            }
-          } catch (erro) {
-            console.warn(
-              'Erro ao salvar cadastro:',
-              erro
-            );
-          }
-
-          setTelaAtual('Generos');
-        }}
+        onCadastroSucesso={finalizarCadastro}
       />
     );
   }
@@ -473,6 +714,7 @@ export default function App() {
   ) {
     return (
       <Detalhes
+        usuario={usuarioAtual}
         midia={midiaSelecionada}
         onVoltar={voltarDaTelaDetalhes}
       />
@@ -486,6 +728,7 @@ export default function App() {
   if (telaAtual === 'NovoRegistro') {
     return (
       <NovoRegistro
+        usuario={usuarioAtual}
         onVoltar={() => {
           setTelaAtual('Home');
         }}
@@ -578,6 +821,7 @@ export default function App() {
 
   const obterTitulo = (filme, indice) => {
     if (filme?.title) return filme.title;
+
     if (filme?.name) return filme.name;
 
     return TITULOS_FALLBACK[indice];

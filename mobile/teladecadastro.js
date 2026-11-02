@@ -1,5 +1,7 @@
+import React, { useMemo, useRef, useState } from 'react';
 
-import React, { useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import {
   ActivityIndicator,
   Alert,
@@ -16,20 +18,63 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
 import {
   Feather,
   Ionicons,
   MaterialCommunityIcons,
 } from '@expo/vector-icons';
 
-// Logo do CineTrack
-// Arquivo esperado: assets/logo-cinetrack.png
-const LOGO_CINETRACK = require('./assets/logo-cinetrack.png');
+import { LinearGradient } from 'expo-linear-gradient';
+import { API_URL } from './apiConfig';
 
-// Endereço da API PHP
-// Endereço da API PHP
-const API_CADASTRO =
-  'https://archive-whose-publishing-list.trycloudflare.com/TCC/TCC/api/cadastro.php';
+// ============================================================
+// CHAVES DA SESSÃO
+// ============================================================
+
+const CHAVE_USUARIO = '@CineTrack:usuario';
+const CHAVE_TOKEN = '@CineTrack:token';
+
+// ============================================================
+// IDENTIDADE VISUAL CINETRACK
+// ============================================================
+
+const C = {
+  bg: '#050608',
+  surface: '#0D0F13',
+  card: '#101620',
+  elevated: '#151C28',
+  border: 'rgba(255,255,255,0.085)',
+  blue: '#3B82F6',
+  blueLight: '#60A5FA',
+  text: '#F5F7FA',
+  secondary: '#9CA3AF',
+  muted: '#687386',
+  red: '#F87171',
+  yellow: '#FBBF24',
+  green: '#34D399',
+};
+
+// ============================================================
+// FUNÇÃO AUXILIAR — INTERPRETAR RESPOSTA DA API
+// ============================================================
+
+async function interpretarResposta(resposta) {
+  const texto = await resposta.text();
+
+  try {
+    return JSON.parse(texto);
+  } catch {
+    throw new Error(
+      'O servidor retornou uma resposta inválida. Verifique a API PHP.'
+    );
+  }
+}
+
+// ============================================================
+// COMPONENTE
+// ============================================================
+
 export default function TelaCadastro({
   onVoltar,
   onEntrar,
@@ -39,19 +84,45 @@ export default function TelaCadastro({
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [confirmarSenha, setConfirmarSenha] = useState('');
+
   const [verSenha, setVerSenha] = useState(false);
   const [verConfirmarSenha, setVerConfirmarSenha] = useState(false);
+
   const [aceitouTermos, setAceitouTermos] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [focusedField, setFocusedField] = useState('');
   const [submitted, setSubmitted] = useState(false);
 
+  const emailRef = useRef(null);
+  const senhaRef = useRef(null);
+  const confirmarSenhaRef = useRef(null);
+
+  // ==========================================================
+  // VALIDAÇÕES
+  // ==========================================================
+
+  const nomeNormalizado = nome.trim();
   const emailNormalizado = email.trim().toLowerCase();
+
+  const nomeValido = nomeNormalizado.length >= 2;
 
   const emailValido =
     /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailNormalizado);
 
-  const nomeValido = nome.trim().length >= 2;
+  const senhaValida =
+    senha.length >= 8 &&
+    /[A-Z]/.test(senha) &&
+    /[a-z]/.test(senha) &&
+    /\d/.test(senha);
+
+  const senhasIguais =
+    senha.length > 0 &&
+    senha === confirmarSenha;
+
+  // ==========================================================
+  // FORÇA DA SENHA
+  // ==========================================================
 
   const forcaSenha = useMemo(() => {
     if (!senha) {
@@ -67,54 +138,204 @@ export default function TelaCadastro({
     if (senha.length >= 8) pontos++;
     if (senha.length >= 12) pontos++;
 
-    if (/[A-Z]/.test(senha) && /[a-z]/.test(senha)) {
+    if (
+      /[A-Z]/.test(senha) &&
+      /[a-z]/.test(senha)
+    ) {
       pontos++;
     }
 
-    if (/\d/.test(senha) && /[^A-Za-z0-9]/.test(senha)) {
-      pontos++;
-    }
+    if (/\d/.test(senha)) pontos++;
+
+    if (/[^A-Za-z0-9]/.test(senha)) pontos++;
 
     if (pontos <= 1) {
-      return { nivel: 1, cor: '#F87171', texto: 'Fraca' };
+      return {
+        nivel: 1,
+        cor: C.red,
+        texto: 'Fraca',
+      };
     }
 
     if (pontos === 2) {
-      return { nivel: 2, cor: '#FBBF24', texto: 'Razoável' };
+      return {
+        nivel: 2,
+        cor: C.yellow,
+        texto: 'Razoável',
+      };
     }
 
-    if (pontos === 3) {
-      return { nivel: 3, cor: '#60A5FA', texto: 'Boa' };
+    if (pontos <= 4) {
+      return {
+        nivel: 3,
+        cor: C.blueLight,
+        texto: 'Boa',
+      };
     }
 
-    return { nivel: 4, cor: '#34D399', texto: 'Forte' };
+    return {
+      nivel: 4,
+      cor: C.green,
+      texto: 'Forte',
+    };
   }, [senha]);
 
+  // ==========================================================
+  // MENSAGENS DE ERRO
+  // ==========================================================
+
   const mostrarErro = mensagem => {
-    Alert.alert('Confira seus dados', mensagem);
+    Alert.alert(
+      'Confira seus dados',
+      mensagem
+    );
   };
 
-  // CADASTRO INTEGRADO AO BACKEND PHP + SQLITE
+  // ==========================================================
+  // AUTENTICAÇÃO APÓS O CADASTRO
+  // ==========================================================
+
+  const autenticarNovaConta = async dadosCadastro => {
+    let usuarioRetornado = dadosCadastro.usuario || {};
+
+    let token = typeof dadosCadastro.token === 'string'
+      ? dadosCadastro.token.trim()
+      : '';
+
+    let usuarioId =
+      usuarioRetornado.id ??
+      dadosCadastro.id ??
+      null;
+
+    /*
+     * Se cadastro.php não retornar token ou ID válido,
+     * fazemos login automático com os dados recém-cadastrados.
+     *
+     * Isso garante que a sessão seja vinculada ao usuário
+     * realmente criado no banco de dados.
+     */
+
+    if (!token || usuarioId === null || usuarioId === '') {
+      const dadosLogin = new URLSearchParams();
+
+      dadosLogin.append('email', emailNormalizado);
+      dadosLogin.append('senha', senha);
+
+      const respostaLogin = await fetch(
+        `${API_URL}/login.php`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
+          },
+          body: dadosLogin.toString(),
+        }
+      );
+
+      const login = await interpretarResposta(respostaLogin);
+
+      if (
+        !respostaLogin.ok ||
+        !login?.sucesso ||
+        !login?.token ||
+        !login?.usuario?.id
+      ) {
+        throw new Error(
+          'Sua conta foi criada, mas não foi possível iniciar sua sessão automaticamente. Entre usando seu e-mail e sua senha.'
+        );
+      }
+
+      usuarioRetornado = login.usuario;
+      usuarioId = login.usuario.id;
+      token = String(login.token).trim();
+    }
+
+    // Não aceita um ID inventado ou inexistente.
+    if (
+      usuarioId === null ||
+      usuarioId === undefined ||
+      String(usuarioId).trim() === '' ||
+      !token
+    ) {
+      throw new Error(
+        'O servidor não retornou os dados de autenticação necessários. Verifique o cadastro.php e o login.php.'
+      );
+    }
+
+    const novoUsuario = {
+      ...usuarioRetornado,
+      id: usuarioId,
+      username:
+        usuarioRetornado.username ||
+        usuarioRetornado.nome ||
+        nomeNormalizado,
+      nome:
+        usuarioRetornado.nome ||
+        nomeNormalizado,
+      email:
+        usuarioRetornado.email ||
+        emailNormalizado,
+      role:
+        usuarioRetornado.role ||
+        'user',
+      created_at:
+        usuarioRetornado.created_at ||
+        new Date().toISOString(),
+    };
+
+    /*
+     * IMPORTANTE:
+     * A sessão e o token são salvos antes de chamar
+     * onCadastroSucesso.
+     *
+     * O userStorage.js utiliza o ID de @CineTrack:usuario
+     * para separar os dados de cada conta.
+     */
+
+    await AsyncStorage.multiSet([
+      [
+        CHAVE_USUARIO,
+        JSON.stringify(novoUsuario),
+      ],
+      [
+        CHAVE_TOKEN,
+        token,
+      ],
+    ]);
+
+    return novoUsuario;
+  };
+
+  // ==========================================================
+  // CADASTRO — PHP + SQLITE
+  // ==========================================================
+
   const handleCadastro = async () => {
+    if (loading) return;
+
     Keyboard.dismiss();
     setSubmitted(true);
 
     if (!nomeValido) {
-      return mostrarErro(
+      mostrarErro(
         'Digite seu nome com pelo menos 2 caracteres.'
       );
+      return;
     }
 
     if (!emailValido) {
-      return mostrarErro(
+      mostrarErro(
         'Digite um endereço de e-mail válido.'
       );
+      return;
     }
 
     if (senha.length < 8) {
-      return mostrarErro(
+      mostrarErro(
         'Sua senha precisa ter pelo menos 8 caracteres.'
       );
+      return;
     }
 
     if (
@@ -122,112 +343,141 @@ export default function TelaCadastro({
       !/[a-z]/.test(senha) ||
       !/\d/.test(senha)
     ) {
-      return mostrarErro(
+      mostrarErro(
         'Use letras maiúsculas, minúsculas e pelo menos um número na senha.'
       );
+      return;
     }
 
-    if (senha !== confirmarSenha) {
-      return mostrarErro('As senhas não coincidem.');
+    if (!senhasIguais) {
+      mostrarErro(
+        'As senhas não coincidem. Confira os dois campos.'
+      );
+      return;
     }
 
     if (!aceitouTermos) {
-      return mostrarErro(
+      mostrarErro(
         'Você precisa aceitar os Termos de Uso e a Política de Privacidade.'
       );
+      return;
     }
 
+    setLoading(true);
+
     try {
-      setLoading(true);
+      const dadosFormulario = new URLSearchParams();
 
-      const resposta = await fetch(API_CADASTRO, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-        },
-        body: new URLSearchParams({
-          nome: nome.trim(),
-          email: emailNormalizado,
-          senha: senha,
-        }).toString(),
-      });
+      dadosFormulario.append('nome', nomeNormalizado);
+      dadosFormulario.append('email', emailNormalizado);
+      dadosFormulario.append('senha', senha);
 
-      const dados = await resposta.json();
+      const resposta = await fetch(
+        `${API_URL}/cadastro.php`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Accept: 'application/json',
+          },
+          body: dadosFormulario.toString(),
+        }
+      );
 
-      if (!resposta.ok || !dados.sucesso) {
+      const dados = await interpretarResposta(resposta);
+
+      if (!resposta.ok || !dados?.sucesso) {
         throw new Error(
-          dados.mensagem || 'Não foi possível criar sua conta.'
+          dados?.mensagem ||
+          'Não foi possível criar sua conta.'
         );
       }
 
-      const novoUsuario = {
-        id: dados.id || `${Date.now()}`,
-        username: nome.trim(),
-        email: emailNormalizado,
-        role: 'user',
-        created_at: new Date().toISOString(),
-      };
+      // Cria a sessão individual da conta recém-cadastrada.
+      const novoUsuario = await autenticarNovaConta(dados);
 
       Alert.alert(
-        'Conta criada!',
-        'Seu perfil CineTrack está pronto. Vamos escolher seus gêneros favoritos?',
+        'Sua conta está pronta!',
+        'Bem-vindo ao CineTrack. Agora vamos conhecer seus gostos e escolher seus gêneros favoritos.',
         [
           {
             text: 'Continuar',
-            onPress: () => onCadastroSucesso?.(novoUsuario),
+            onPress: () => {
+              if (
+                typeof onCadastroSucesso === 'function'
+              ) {
+                onCadastroSucesso(novoUsuario);
+              }
+            },
           },
         ]
       );
 
     } catch (erro) {
+      console.error('Erro no cadastro:', erro);
+
       Alert.alert(
-        'Erro no cadastro',
+        'Não foi possível concluir o cadastro',
         erro.message ||
-          'Não foi possível conectar ao servidor. Tente novamente.'
+          'Verifique sua conexão e tente novamente.'
       );
+
     } finally {
       setLoading(false);
     }
   };
 
-  const fieldStyle = name => [
-    styles.inputShell,
-    focusedField === name && styles.inputShellFocused,
-    submitted &&
-      name === 'nome' &&
-      !nomeValido &&
-      styles.inputShellError,
-    submitted &&
-      name === 'email' &&
-      !emailValido &&
-      styles.inputShellError,
-    submitted &&
-      name === 'senha' &&
-      senha.length < 8 &&
-      styles.inputShellError,
-    submitted &&
-      name === 'confirmarSenha' &&
-      senha !== confirmarSenha &&
-      styles.inputShellError,
-  ];
+  // ==========================================================
+  // ESTILO DINÂMICO DOS CAMPOS
+  // ==========================================================
+
+  const fieldStyle = name => {
+    const invalido =
+      submitted &&
+      (
+        (name === 'nome' && !nomeValido) ||
+        (name === 'email' && !emailValido) ||
+        (name === 'senha' && !senhaValida) ||
+        (name === 'confirmarSenha' && !senhasIguais)
+      );
+
+    return [
+      styles.inputShell,
+      focusedField === name && styles.inputShellFocused,
+      invalido && styles.inputShellError,
+    ];
+  };
+
+  // ==========================================================
+  // LABEL
+  // ==========================================================
 
   const renderLabel = (label, hint) => (
     <View style={styles.labelRow}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>
+        {label}
+      </Text>
 
       {hint ? (
-        <Text style={styles.labelHint}>{hint}</Text>
+        <Text style={styles.labelHint}>
+          {hint}
+        </Text>
       ) : null}
     </View>
   );
+
+  // ==========================================================
+  // INTERFACE
+  // ==========================================================
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar
         barStyle="light-content"
-        backgroundColor="#050914"
+        backgroundColor={C.bg}
       />
+
+      {/* ILUMINAÇÃO DO FUNDO */}
 
       <View
         pointerEvents="none"
@@ -235,13 +485,20 @@ export default function TelaCadastro({
       >
         <View style={styles.glowA} />
         <View style={styles.glowB} />
-        <View style={styles.backgroundLine} />
       </View>
 
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+        behavior={
+          Platform.OS === 'ios'
+            ? 'padding'
+            : 'height'
+        }
+        keyboardVerticalOffset={
+          Platform.OS === 'ios'
+            ? 12
+            : 0
+        }
       >
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -249,35 +506,45 @@ export default function TelaCadastro({
           showsVerticalScrollIndicator={false}
           bounces={false}
         >
+          {/* ==================================================
+              CABEÇALHO
+          ================================================== */}
+
           <View style={styles.topBar}>
             <TouchableOpacity
               style={styles.backButton}
               onPress={onVoltar}
+              disabled={loading}
               activeOpacity={0.8}
               accessibilityRole="button"
-              accessibilityLabel="Voltar para a tela inicial"
+              accessibilityLabel="Voltar"
             >
               <Feather
                 name="arrow-left"
-                size={22}
-                color="#E2E8F0"
+                size={21}
+                color={C.text}
               />
             </TouchableOpacity>
 
             <View style={styles.stepPill}>
               <View style={styles.stepDot} />
+
               <Text style={styles.stepText}>
                 PASSO 1 DE 2
               </Text>
             </View>
 
-            <View style={styles.topBarSpacer} />
+            <View style={styles.topSpacer} />
           </View>
+
+          {/* ==================================================
+              MARCA E INTRODUÇÃO
+          ================================================== */}
 
           <View style={styles.intro}>
             <View style={styles.logoContainer}>
               <Image
-                source={LOGO_CINETRACK}
+                source={require('./assets/logo-cinetrack.png')}
                 style={styles.logoImage}
                 resizeMode="contain"
                 fadeDuration={0}
@@ -298,10 +565,14 @@ export default function TelaCadastro({
             </Text>
 
             <Text style={styles.subtitle}>
-              Crie sua conta e organize os filmes, séries e trilhas
-              que fazem parte de você.
+              Crie sua conta e organize os filmes,
+              séries e trilhas que fazem parte de você.
             </Text>
           </View>
+
+          {/* ==================================================
+              FORMULÁRIO
+          ================================================== */}
 
           <View style={styles.formCard}>
             <View style={styles.cardHeader}>
@@ -311,7 +582,7 @@ export default function TelaCadastro({
                 </Text>
 
                 <Text style={styles.cardSubtitle}>
-                  Leva menos de um minuto.
+                  Seu espaço começa com alguns dados.
                 </Text>
               </View>
 
@@ -319,14 +590,18 @@ export default function TelaCadastro({
                 <Ionicons
                   name="shield-checkmark-outline"
                   size={21}
-                  color="#60A5FA"
+                  color={C.blueLight}
                 />
               </View>
             </View>
 
             {/* NOME */}
+
             <View style={styles.inputGroup}>
-              {renderLabel('NOME', 'Como podemos te chamar?')}
+              {renderLabel(
+                'NOME',
+                'Como podemos te chamar?'
+              )}
 
               <View style={fieldStyle('nome')}>
                 <Ionicons
@@ -334,8 +609,8 @@ export default function TelaCadastro({
                   size={21}
                   color={
                     focusedField === 'nome'
-                      ? '#60A5FA'
-                      : '#71829D'
+                      ? C.blueLight
+                      : C.muted
                   }
                   style={styles.fieldIcon}
                 />
@@ -343,37 +618,49 @@ export default function TelaCadastro({
                 <TextInput
                   style={styles.input}
                   placeholder="Seu nome"
-                  placeholderTextColor="#596A84"
+                  placeholderTextColor="#687386"
                   value={nome}
                   onChangeText={setNome}
                   autoCapitalize="words"
                   autoCorrect={false}
                   textContentType="name"
                   returnKeyType="next"
-                  onFocus={() => setFocusedField('nome')}
-                  onBlur={() => setFocusedField('')}
+                  editable={!loading}
+                  onFocus={() =>
+                    setFocusedField('nome')
+                  }
+                  onBlur={() =>
+                    setFocusedField('')
+                  }
+                  onSubmitEditing={() =>
+                    emailRef.current?.focus()
+                  }
                   accessibilityLabel="Nome"
                 />
 
-                {nomeValido ? (
+                {nomeValido && (
                   <Ionicons
                     name="checkmark-circle"
                     size={20}
-                    color="#34D399"
+                    color={C.green}
                   />
-                ) : null}
+                )}
               </View>
 
-              {submitted && !nomeValido ? (
+              {submitted && !nomeValido && (
                 <Text style={styles.errorText}>
                   Informe seu nome.
                 </Text>
-              ) : null}
+              )}
             </View>
 
             {/* E-MAIL */}
+
             <View style={styles.inputGroup}>
-              {renderLabel('E-MAIL', 'Será usado para entrar')}
+              {renderLabel(
+                'E-MAIL',
+                'Será usado para entrar'
+              )}
 
               <View style={fieldStyle('email')}>
                 <Ionicons
@@ -381,16 +668,17 @@ export default function TelaCadastro({
                   size={21}
                   color={
                     focusedField === 'email'
-                      ? '#60A5FA'
-                      : '#71829D'
+                      ? C.blueLight
+                      : C.muted
                   }
                   style={styles.fieldIcon}
                 />
 
                 <TextInput
+                  ref={emailRef}
                   style={styles.input}
                   placeholder="voce@exemplo.com"
-                  placeholderTextColor="#596A84"
+                  placeholderTextColor="#687386"
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -398,30 +686,42 @@ export default function TelaCadastro({
                   autoCorrect={false}
                   textContentType="emailAddress"
                   returnKeyType="next"
-                  onFocus={() => setFocusedField('email')}
-                  onBlur={() => setFocusedField('')}
+                  editable={!loading}
+                  onFocus={() =>
+                    setFocusedField('email')
+                  }
+                  onBlur={() =>
+                    setFocusedField('')
+                  }
+                  onSubmitEditing={() =>
+                    senhaRef.current?.focus()
+                  }
                   accessibilityLabel="E-mail"
                 />
 
-                {email.length > 0 && emailValido ? (
+                {email.length > 0 && emailValido && (
                   <Ionicons
                     name="checkmark-circle"
                     size={20}
-                    color="#34D399"
+                    color={C.green}
                   />
-                ) : null}
+                )}
               </View>
 
-              {submitted && !emailValido ? (
+              {submitted && !emailValido && (
                 <Text style={styles.errorText}>
                   Digite um e-mail válido.
                 </Text>
-              ) : null}
+              )}
             </View>
 
             {/* SENHA */}
+
             <View style={styles.inputGroup}>
-              {renderLabel('SENHA', 'Mínimo de 8 caracteres')}
+              {renderLabel(
+                'SENHA',
+                'Mínimo de 8 caracteres'
+              )}
 
               <View style={fieldStyle('senha')}>
                 <Ionicons
@@ -429,16 +729,17 @@ export default function TelaCadastro({
                   size={21}
                   color={
                     focusedField === 'senha'
-                      ? '#60A5FA'
-                      : '#71829D'
+                      ? C.blueLight
+                      : C.muted
                   }
                   style={styles.fieldIcon}
                 />
 
                 <TextInput
+                  ref={senhaRef}
                   style={styles.input}
                   placeholder="Crie uma senha"
-                  placeholderTextColor="#596A84"
+                  placeholderTextColor="#687386"
                   value={senha}
                   onChangeText={setSenha}
                   secureTextEntry={!verSenha}
@@ -446,16 +747,29 @@ export default function TelaCadastro({
                   autoCorrect={false}
                   textContentType="newPassword"
                   returnKeyType="next"
-                  onFocus={() => setFocusedField('senha')}
-                  onBlur={() => setFocusedField('')}
+                  editable={!loading}
+                  onFocus={() =>
+                    setFocusedField('senha')
+                  }
+                  onBlur={() =>
+                    setFocusedField('')
+                  }
+                  onSubmitEditing={() =>
+                    confirmarSenhaRef.current?.focus()
+                  }
                   accessibilityLabel="Senha"
                 />
 
                 <TouchableOpacity
-                  onPress={() => setVerSenha(v => !v)}
+                  onPress={() =>
+                    setVerSenha(value => !value)
+                  }
                   hitSlop={10}
+                  disabled={loading}
                   accessibilityLabel={
-                    verSenha ? 'Ocultar senha' : 'Mostrar senha'
+                    verSenha
+                      ? 'Ocultar senha'
+                      : 'Mostrar senha'
                   }
                 >
                   <Ionicons
@@ -465,10 +779,12 @@ export default function TelaCadastro({
                         : 'eye-outline'
                     }
                     size={22}
-                    color="#8292AA"
+                    color={C.secondary}
                   />
                 </TouchableOpacity>
               </View>
+
+              {/* INDICADOR DE FORÇA */}
 
               {senha.length > 0 && (
                 <View style={styles.strengthArea}>
@@ -497,14 +813,35 @@ export default function TelaCadastro({
                 </View>
               )}
 
-              {submitted && senha.length < 8 ? (
+              <View style={styles.passwordRules}>
+                <PasswordRule
+                  valido={senha.length >= 8}
+                  texto="8 caracteres"
+                />
+
+                <PasswordRule
+                  valido={
+                    /[A-Z]/.test(senha) &&
+                    /[a-z]/.test(senha)
+                  }
+                  texto="Maiúscula e minúscula"
+                />
+
+                <PasswordRule
+                  valido={/\d/.test(senha)}
+                  texto="Um número"
+                />
+              </View>
+
+              {submitted && !senhaValida && (
                 <Text style={styles.errorText}>
-                  Use pelo menos 8 caracteres.
+                  Sua senha precisa atender aos requisitos acima.
                 </Text>
-              ) : null}
+              )}
             </View>
 
             {/* CONFIRMAR SENHA */}
+
             <View style={styles.inputGroup}>
               {renderLabel(
                 'CONFIRMAR SENHA',
@@ -517,16 +854,17 @@ export default function TelaCadastro({
                   size={21}
                   color={
                     focusedField === 'confirmarSenha'
-                      ? '#60A5FA'
-                      : '#71829D'
+                      ? C.blueLight
+                      : C.muted
                   }
                   style={styles.fieldIcon}
                 />
 
                 <TextInput
+                  ref={confirmarSenhaRef}
                   style={styles.input}
                   placeholder="Digite a senha novamente"
-                  placeholderTextColor="#596A84"
+                  placeholderTextColor="#687386"
                   value={confirmarSenha}
                   onChangeText={setConfirmarSenha}
                   secureTextEntry={!verConfirmarSenha}
@@ -534,19 +872,23 @@ export default function TelaCadastro({
                   autoCorrect={false}
                   textContentType="newPassword"
                   returnKeyType="done"
+                  editable={!loading}
                   onSubmitEditing={handleCadastro}
                   onFocus={() =>
                     setFocusedField('confirmarSenha')
                   }
-                  onBlur={() => setFocusedField('')}
+                  onBlur={() =>
+                    setFocusedField('')
+                  }
                   accessibilityLabel="Confirmar senha"
                 />
 
                 <TouchableOpacity
                   onPress={() =>
-                    setVerConfirmarSenha(v => !v)
+                    setVerConfirmarSenha(value => !value)
                   }
                   hitSlop={10}
+                  disabled={loading}
                   accessibilityLabel={
                     verConfirmarSenha
                       ? 'Ocultar confirmação'
@@ -560,27 +902,45 @@ export default function TelaCadastro({
                         : 'eye-outline'
                     }
                     size={22}
-                    color="#8292AA"
+                    color={C.secondary}
                   />
                 </TouchableOpacity>
               </View>
 
-              {submitted && senha !== confirmarSenha ? (
+              {submitted && !senhasIguais && (
                 <Text style={styles.errorText}>
                   As senhas precisam ser iguais.
                 </Text>
-              ) : null}
+              )}
+
+              {senhasIguais && (
+                <View style={styles.passwordMatch}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={15}
+                    color={C.green}
+                  />
+
+                  <Text style={styles.passwordMatchText}>
+                    As senhas coincidem.
+                  </Text>
+                </View>
+              )}
             </View>
 
             {/* TERMOS */}
+
             <TouchableOpacity
               style={styles.termsRow}
               onPress={() =>
                 setAceitouTermos(value => !value)
               }
               activeOpacity={0.8}
+              disabled={loading}
               accessibilityRole="checkbox"
-              accessibilityState={{ checked: aceitouTermos }}
+              accessibilityState={{
+                checked: aceitouTermos,
+              }}
             >
               <View
                 style={[
@@ -588,13 +948,13 @@ export default function TelaCadastro({
                   aceitouTermos && styles.checkboxChecked,
                 ]}
               >
-                {aceitouTermos ? (
+                {aceitouTermos && (
                   <Feather
                     name="check"
-                    size={16}
+                    size={15}
                     color="#FFFFFF"
                   />
-                ) : null}
+                )}
               </View>
 
               <Text style={styles.termsText}>
@@ -610,18 +970,14 @@ export default function TelaCadastro({
               </Text>
             </TouchableOpacity>
 
-            {submitted && !aceitouTermos ? (
-              <Text
-                style={[
-                  styles.errorText,
-                  styles.termsError,
-                ]}
-              >
+            {submitted && !aceitouTermos && (
+              <Text style={styles.errorText}>
                 Aceite os termos para continuar.
               </Text>
-            ) : null}
+            )}
 
-            {/* BOTÃO DE CADASTRO */}
+            {/* BOTÃO */}
+
             <TouchableOpacity
               style={[
                 styles.submitButton,
@@ -632,43 +988,53 @@ export default function TelaCadastro({
               activeOpacity={0.86}
               accessibilityRole="button"
             >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <>
-                  <MaterialCommunityIcons
-                    name="account-plus-outline"
-                    size={23}
-                    color="#FFFFFF"
-                  />
+              <LinearGradient
+                colors={['#438EFF', '#2563EB']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.submitGradient}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <>
+                    <MaterialCommunityIcons
+                      name="account-plus-outline"
+                      size={22}
+                      color="#FFFFFF"
+                    />
 
-                  <Text style={styles.submitText}>
-                    Criar minha conta
-                  </Text>
+                    <Text style={styles.submitText}>
+                      Criar minha conta
+                    </Text>
 
-                  <Feather
-                    name="arrow-right"
-                    size={19}
-                    color="#FFFFFF"
-                  />
-                </>
-              )}
+                    <Feather
+                      name="arrow-right"
+                      size={19}
+                      color="#FFFFFF"
+                    />
+                  </>
+                )}
+              </LinearGradient>
             </TouchableOpacity>
 
             <View style={styles.secureNote}>
-              <Ionicons
-                name="lock-closed-outline"
-                size={15}
-                color="#6F819D"
+              <Feather
+                name="lock"
+                size={13}
+                color={C.muted}
               />
 
               <Text style={styles.secureText}>
-                Seus dados são usados para configurar seu perfil.
+                Seus dados são usados para configurar sua conta.
               </Text>
             </View>
           </View>
 
-          {/* ENTRAR EM CONTA EXISTENTE */}
+          {/* ==================================================
+              ENTRAR EM CONTA EXISTENTE
+          ================================================== */}
+
           <View style={styles.footer}>
             <Text style={styles.footerText}>
               Já tem uma conta?
@@ -676,6 +1042,7 @@ export default function TelaCadastro({
 
             <TouchableOpacity
               onPress={onEntrar || onVoltar}
+              disabled={loading}
               activeOpacity={0.8}
             >
               <Text style={styles.footerLink}>
@@ -685,7 +1052,7 @@ export default function TelaCadastro({
           </View>
 
           <Text style={styles.bottomCaption}>
-            CINEMA, SÉRIES E MÚSICA. TUDO CONECTADO.
+            CINEMA · SÉRIES · MÚSICA
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -693,19 +1060,55 @@ export default function TelaCadastro({
   );
 }
 
+// ============================================================
+// COMPONENTE AUXILIAR — REQUISITOS DA SENHA
+// ============================================================
+
+function PasswordRule({ valido, texto }) {
+  return (
+    <View style={styles.passwordRule}>
+      <Ionicons
+        name={
+          valido
+            ? 'checkmark-circle'
+            : 'ellipse-outline'
+        }
+        size={13}
+        color={valido ? '#34D399' : '#62718A'}
+      />
+
+      <Text
+        style={[
+          styles.passwordRuleText,
+          valido && styles.passwordRuleValid,
+        ]}
+      >
+        {texto}
+      </Text>
+    </View>
+  );
+}
+
+// ============================================================
+// ESTILOS
+// ============================================================
+
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
+
   safeArea: {
     flex: 1,
-    backgroundColor: '#050914',
+    backgroundColor: C.bg,
   },
+
   background: {
     ...StyleSheet.absoluteFillObject,
+    backgroundColor: C.bg,
     overflow: 'hidden',
-    backgroundColor: '#050914',
   },
+
   glowA: {
     position: 'absolute',
     top: -130,
@@ -715,6 +1118,7 @@ const styles = StyleSheet.create({
     borderRadius: 200,
     backgroundColor: 'rgba(37,99,235,0.17)',
   },
+
   glowB: {
     position: 'absolute',
     bottom: -200,
@@ -724,37 +1128,34 @@ const styles = StyleSheet.create({
     borderRadius: 220,
     backgroundColor: 'rgba(14,165,233,0.09)',
   },
-  backgroundLine: {
-    position: 'absolute',
-    top: 280,
-    right: -150,
-    width: 260,
-    height: 460,
-    backgroundColor: 'rgba(30,64,175,0.06)',
-    transform: [{ rotate: '-24deg' }],
-  },
+
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 22,
     paddingTop: 10,
     paddingBottom: 28,
   },
+
+  // CABEÇALHO
+
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 24,
+    marginBottom: 20,
   },
+
   backButton: {
-    width: 46,
-    height: 46,
+    width: 44,
+    height: 44,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15,23,42,0.85)',
+    backgroundColor: C.elevated,
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.17)',
+    borderColor: C.border,
   },
+
   stepPill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -766,91 +1167,112 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(59,130,246,0.20)',
   },
+
   stepDot: {
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: '#60A5FA',
+    backgroundColor: C.blueLight,
   },
+
   stepText: {
     color: '#93C5FD',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 1.0,
+    letterSpacing: 1,
   },
-  topBarSpacer: {
-    width: 46,
+
+  topSpacer: {
+    width: 44,
   },
+
+  // INTRODUÇÃO
+
   intro: {
     marginBottom: 23,
   },
+
   logoContainer: {
     width: 112,
-    height: 112,
+    height: 100,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
+    marginBottom: 17,
     backgroundColor: 'transparent',
   },
+
   logoImage: {
     width: 112,
-    height: 112,
+    height: 100,
     backgroundColor: 'transparent',
   },
+
   kicker: {
     color: '#7DA9E8',
-    fontSize: 12,
-    letterSpacing: 1.8,
+    fontSize: 10,
+    letterSpacing: 1.9,
     fontWeight: '900',
     marginBottom: 9,
   },
+
   title: {
     color: '#F8FAFC',
     fontSize: 32,
+    lineHeight: 38,
     fontWeight: '900',
     letterSpacing: -0.7,
   },
+
   titleAccent: {
-    color: '#60A5FA',
+    color: C.blueLight,
     fontSize: 32,
+    lineHeight: 39,
     fontWeight: '900',
     letterSpacing: -0.7,
   },
+
   subtitle: {
-    color: '#9AAAC1',
-    fontSize: 16,
-    lineHeight: 24,
+    color: C.secondary,
+    fontSize: 14,
+    lineHeight: 22,
     marginTop: 12,
     maxWidth: 360,
   },
+
+  // CARTÃO DO FORMULÁRIO
+
   formCard: {
-    padding: 20,
-    borderRadius: 24,
-    backgroundColor: 'rgba(10,17,32,0.90)',
+    padding: 19,
+    borderRadius: 23,
+    backgroundColor: 'rgba(13,17,26,0.96)',
     borderWidth: 1,
-    borderColor: 'rgba(148,163,184,0.16)',
+    borderColor: 'rgba(148,163,184,0.15)',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.25,
-    shadowRadius: 20,
+    shadowRadius: 18,
     elevation: 8,
   },
+
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 22,
   },
+
   cardTitle: {
-    color: '#F8FAFC',
+    color: C.text,
     fontSize: 21,
     fontWeight: '900',
   },
+
   cardSubtitle: {
-    color: '#71829D',
-    fontSize: 13,
+    color: C.muted,
+    fontSize: 12,
     marginTop: 5,
   },
+
   lockBadge: {
     width: 44,
     height: 44,
@@ -861,92 +1283,149 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(59,130,246,0.20)',
   },
+
+  // CAMPOS
+
   inputGroup: {
     marginBottom: 18,
   },
+
   labelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 9,
     flexWrap: 'wrap',
     gap: 5,
+    marginBottom: 9,
   },
+
   label: {
     color: '#CBD5E1',
-    fontSize: 14,
+    fontSize: 10,
     fontWeight: '900',
-    letterSpacing: 1.0,
+    letterSpacing: 1.2,
   },
+
   labelHint: {
-    color: '#64748B',
-    fontSize: 12,
+    color: C.muted,
+    fontSize: 11,
   },
+
   inputShell: {
-    minHeight: 60,
+    minHeight: 59,
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 15,
+    paddingHorizontal: 14,
     borderRadius: 14,
-    backgroundColor: 'rgba(15,23,42,0.88)',
+    backgroundColor: '#0B111C',
     borderWidth: 1,
     borderColor: 'rgba(148,163,184,0.17)',
   },
+
   inputShellFocused: {
-    borderColor: 'rgba(96,165,250,0.8)',
-    backgroundColor: 'rgba(15,32,58,0.95)',
+    borderColor: 'rgba(96,165,250,0.75)',
+    backgroundColor: '#0E192B',
   },
+
   inputShellError: {
     borderColor: 'rgba(248,113,113,0.75)',
   },
+
   fieldIcon: {
     marginRight: 12,
   },
+
   input: {
     flex: 1,
-    minHeight: 58,
-    color: '#F8FAFC',
-    fontSize: 16,
+    minHeight: 57,
+    color: C.text,
+    fontSize: 15,
     paddingVertical: 0,
   },
+
+  errorText: {
+    color: C.red,
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 7,
+  },
+
+  // FORÇA DA SENHA
+
   strengthArea: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 10,
+    marginTop: 11,
   },
+
   strengthBars: {
     flex: 1,
     flexDirection: 'row',
     gap: 5,
   },
+
   strengthBar: {
     flex: 1,
     height: 5,
     borderRadius: 3,
     backgroundColor: 'rgba(148,163,184,0.16)',
   },
+
   strengthLabel: {
-    minWidth: 80,
+    minWidth: 72,
     textAlign: 'right',
-    fontSize: 13,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '900',
   },
-  errorText: {
-    color: '#FCA5A5',
-    fontSize: 13,
-    marginTop: 7,
-    lineHeight: 18,
+
+  passwordRules: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 11,
   },
+
+  passwordRule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+
+  passwordRuleText: {
+    color: '#65758E',
+    fontSize: 10,
+  },
+
+  passwordRuleValid: {
+    color: C.green,
+  },
+
+  passwordMatch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 8,
+  },
+
+  passwordMatchText: {
+    color: C.green,
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // TERMOS
+
   termsRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     marginTop: 1,
     marginBottom: 18,
   },
+
   checkbox: {
-    width: 24,
-    height: 24,
+    width: 23,
+    height: 23,
     borderRadius: 6,
     borderWidth: 1.5,
     borderColor: '#52627A',
@@ -955,82 +1434,97 @@ const styles = StyleSheet.create({
     marginRight: 11,
     marginTop: 1,
   },
+
   checkboxChecked: {
-    backgroundColor: '#347FF2',
-    borderColor: '#347FF2',
+    backgroundColor: C.blue,
+    borderColor: C.blue,
   },
+
   termsText: {
     flex: 1,
-    color: '#91A0B7',
-    fontSize: 13,
-    lineHeight: 20,
+    color: C.secondary,
+    fontSize: 12,
+    lineHeight: 19,
   },
+
   termsLink: {
     color: '#93C5FD',
-    fontWeight: '800',
+    fontWeight: '900',
   },
-  termsError: {
-    marginTop: -10,
-    marginBottom: 12,
-  },
+
+  // BOTÃO DE CADASTRO
+
   submitButton: {
-    minHeight: 62,
+    minHeight: 60,
     borderRadius: 15,
+    overflow: 'hidden',
+    elevation: 7,
+    shadowColor: C.blue,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+
+  submitButtonDisabled: {
+    opacity: 0.65,
+  },
+
+  submitGradient: {
+    flex: 1,
+    minHeight: 60,
     paddingHorizontal: 15,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 11,
-    backgroundColor: '#347FF2',
-    borderWidth: 1,
-    borderColor: 'rgba(147,197,253,0.55)',
-    shadowColor: '#2563EB',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 7,
   },
-  submitButtonDisabled: {
-    opacity: 0.65,
-  },
+
   submitText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '900',
   },
+
   secureNote: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 7,
-    marginTop: 14,
+    marginTop: 15,
   },
+
   secureText: {
-    color: '#65758E',
-    fontSize: 12,
+    color: C.muted,
+    fontSize: 10,
     textAlign: 'center',
   },
+
+  // RODAPÉ
+
   footer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 23,
   },
+
   footerText: {
-    color: '#71829D',
-    fontSize: 15,
+    color: C.secondary,
+    fontSize: 13,
   },
+
   footerLink: {
-    color: '#93C5FD',
-    fontSize: 15,
+    color: C.blueLight,
+    fontSize: 13,
     fontWeight: '900',
   },
+
   bottomCaption: {
     textAlign: 'center',
-    color: '#42516A',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 1.5,
+    color: '#46536A',
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.7,
     marginTop: 23,
   },
 });

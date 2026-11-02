@@ -5,7 +5,7 @@
 ========================================================= */
 
 const SERVER_BASE_URL =
-  'https://archive-whose-publishing-list.trycloudflare.com/TCC/TCC';
+  'https://compatible-assumed-williams-felt.trycloudflare.com/TCC/TCC';
 
 const SPOTIFY_TOKEN_URL =
   `${SERVER_BASE_URL}/spotify_token.php`;
